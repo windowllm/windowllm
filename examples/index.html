@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WindowLLM Examples</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 2rem;
+      background: #1a1a2e;
+      color: #eee;
+    }
+    h1 { color: #e94560; margin-bottom: 0.5rem; }
+    p { color: #888; margin-top: 0; }
+    .examples {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      margin-top: 2rem;
+    }
+    a {
+      display: block;
+      padding: 1.5rem;
+      background: #16213e;
+      border: 1px solid #333;
+      border-radius: 8px;
+      color: #fff;
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+    a:hover {
+      border-color: #e94560;
+      background: #1a1a3e;
+    }
+    a h2 {
+      margin: 0 0 0.5rem 0;
+      color: #e94560;
+      font-size: 1.2rem;
+    }
+    a p {
+      margin: 0;
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>WindowLLM Examples</h1>
+  <p>Demonstrations of the window.llm API</p>
+
+  <div class="examples">
+    <a href="/capabilities/">
+      <h2>Model Discovery</h2>
+      <p>Explore available providers, models, and their capabilities</p>
+    </a>
+    <a href="/basic/">
+      <h2>Basic</h2>
+      <p>Simple one-shot completion with a text input</p>
+    </a>
+    <a href="/streaming/">
+      <h2>Streaming</h2>
+      <p>Real-time streaming responses with a typing cursor effect</p>
+    </a>
+    <a href="/chat/">
+      <h2>Chat</h2>
+      <p>Multi-turn conversation with streaming responses</p>
+    </a>
+    <a href="/tools/">
+      <h2>Tool Calling</h2>
+      <p>Function calling with weather, calculator, and time tools</p>
+    </a>
+    <a href="/local-models/">
+      <h2>Local Models</h2>
+      <p>Use local LLMs via Ollama with model selection and pulling</p>
+    </a>
+  </div>
+</body>
+</html>

@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WindowLLM - Basic Example</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 2rem;
+      background: #1a1a2e;
+      color: #eee;
+    }
+    h1 { color: #e94560; }
+    .model-selector {
+      position: relative;
+      margin-bottom: 1rem;
+      max-width: 350px;
+    }
+    .model-search {
+      width: 100%;
+      padding: 0.75rem;
+      border: 1px solid #333;
+      border-radius: 4px;
+      background: #16213e;
+      color: #eee;
+      font-size: 0.9rem;
+    }
+    .model-search:focus { outline: none; border-color: #e94560; }
+    .model-dropdown {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      max-height: 300px;
+      overflow-y: auto;
+      background: #16213e;
+      border: 1px solid #333;
+      border-top: none;
+      border-radius: 0 0 4px 4px;
+      z-index: 100;
+      display: none;
+    }
+    .model-dropdown.open { display: block; }
+    .model-option {
+      padding: 0.5rem 0.75rem;
+      cursor: pointer;
+      font-size: 0.85rem;
+    }
+    .model-option:hover { background: #0f3460; }
+    .model-option.selected { background: #e94560; }
+    .model-option small { color: #888; display: block; font-size: 0.75rem; }
+    .input-group {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+    input {
+      flex: 1;
+      padding: 0.75rem;
+      border: 1px solid #333;
+      border-radius: 4px;
+      background: #16213e;
+      color: #eee;
+      font-size: 1rem;
+    }
+    button {
+      padding: 0.75rem 1.5rem;
+      background: #e94560;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 1rem;
+    }
+    button:hover { background: #ff6b6b; }
+    button:disabled { background: #666; cursor: not-allowed; }
+    #output {
+      background: #16213e;
+      border: 1px solid #333;
+      border-radius: 4px;
+      padding: 1rem;
+      min-height: 200px;
+      white-space: pre-wrap;
+      font-family: 'SF Mono', Monaco, monospace;
+    }
+    .error { color: #ff6b6b; }
+    .status { color: #888; font-size: 0.9rem; margin-bottom: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>WindowLLM Basic Example</h1>
+
+  <div class="status" id="status">Checking WindowLLM availability...</div>
+
+  <div class="model-selector">
+    <input type="text" class="model-search" id="model-search" placeholder="Search and select model..." disabled>
+    <div class="model-dropdown" id="model-dropdown"></div>
+  </div>
+
+  <div class="input-group">
+    <input type="text" id="prompt" placeholder="Ask anything..." disabled>
+    <button id="send" disabled>Send</button>
+  </div>
+
+  <div id="output">Response will appear here...</div>
+
+  <script>
+    (function() {
+      // Detect local development and use local vault
+      const isLocal = location.hostname === 'localhost' || location.hostname.endsWith('.localhost');
+      const vaultUrl = isLocal ? 'https://windowllm.localhost:3000' : 'https://windowllm.org';
+
+      // Set the vault frame URL for the client library
+      window.WINDOWLLM_VAULT_URL = `${vaultUrl}/frame.html`;
+
+      const script = document.createElement('script');
+      script.src = `${vaultUrl}/llm.js`;
+      script.onload = main;
+      script.onerror = () => {
+        document.getElementById('status').innerHTML =
+          '<span class="error">Failed to load WindowLLM library from ' + vaultUrl + '</span>';
+      };
+      document.head.appendChild(script);
+    })();
+
+    async function main() {
+      const promptInput = document.getElementById('prompt');
+      const sendButton = document.getElementById('send');
+      const output = document.getElementById('output');
+      const status = document.getElementById('status');
+      const modelSearch = document.getElementById('model-search');
+      const modelDropdown = document.getElementById('model-dropdown');
+
+      let session = null;
+      let allModels = [];
+      let selectedModel = null;
+
+      function renderModelDropdown(filter = '') {
+        const lowerFilter = filter.toLowerCase();
+        const filtered = filter
+          ? allModels.filter(m => m.name.toLowerCase().includes(lowerFilter) || m.id.toLowerCase().includes(lowerFilter))
+          : allModels;
+
+        modelDropdown.innerHTML = filtered.slice(0, 50).map(m => `
+          <div class="model-option ${selectedModel?.id === m.id ? 'selected' : ''}" data-id="${m.id}">
+            ${m.name}
+            <small>${m.id}</small>
+          </div>
+        `).join('');
+
+        modelDropdown.querySelectorAll('.model-option').forEach(el => {
+          el.addEventListener('click', () => selectModel(el.dataset.id));
+        });
+      }
+
+      async function selectModel(modelId) {
+        const model = allModels.find(m => m.id === modelId);
+        if (!model) return;
+
+        selectedModel = model;
+        modelSearch.value = model.name;
+        modelDropdown.classList.remove('open');
+
+        // Create new session with selected model
+        try {
+          session = await window.llm.requestSession({ model: model.id });
+          status.textContent = `Using ${session.model.name}`;
+          promptInput.disabled = false;
+          sendButton.disabled = false;
+        } catch (error) {
+          status.innerHTML = `<span class="error">Failed: ${error.message}</span>`;
+        }
+      }
+
+      async function init() {
+        if (!window.llm) {
+          status.innerHTML = '<span class="error">WindowLLM not available</span>';
+          return;
+        }
+
+        try {
+          await window.llm.waitForReady();
+        } catch (error) {
+          status.innerHTML = '<span class="error">WindowLLM not configured</span>';
+          return;
+        }
+
+        status.textContent = 'Loading models...';
+
+        try {
+          allModels = await window.llm.models.list();
+          // Filter to chat-capable models
+          allModels = allModels.filter(m => m.capabilities?.chat !== false);
+          modelSearch.disabled = false;
+          modelSearch.placeholder = `Search ${allModels.length} models...`;
+          renderModelDropdown();
+
+          // Auto-select first model
+          if (allModels.length > 0) {
+            await selectModel(allModels[0].id);
+          }
+        } catch (error) {
+          status.innerHTML = `<span class="error">Failed to load models: ${error.message}</span>`;
+        }
+      }
+
+      async function sendMessage() {
+        const prompt = promptInput.value.trim();
+        if (!prompt || !session) return;
+
+        sendButton.disabled = true;
+        output.textContent = 'Thinking...';
+
+        try {
+          const result = await session.complete(prompt);
+          output.textContent = result.message.content;
+          status.textContent = `${selectedModel?.name} - ${result.usage.inputTokens} in, ${result.usage.outputTokens} out`;
+        } catch (error) {
+          output.innerHTML = `<span class="error">Error: ${error.message}</span>`;
+        } finally {
+          sendButton.disabled = false;
+          promptInput.value = '';
+          promptInput.focus();
+        }
+      }
+
+      // Model selector events
+      modelSearch.addEventListener('focus', () => {
+        renderModelDropdown(modelSearch.value);
+        modelDropdown.classList.add('open');
+      });
+      modelSearch.addEventListener('input', (e) => {
+        renderModelDropdown(e.target.value);
+        modelDropdown.classList.add('open');
+      });
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('.model-selector')) {
+          modelDropdown.classList.remove('open');
+        }
+      });
+
+      sendButton.addEventListener('click', sendMessage);
+      promptInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') sendMessage();
+      });
+
+      init();
+    }
+  </script>
+</body>
+</html>

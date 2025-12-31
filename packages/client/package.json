@@ -1,0 +1,39 @@
+{
+  "name": "@windowllm/client",
+  "version": "0.1.0",
+  "description": "WindowLLM client library (llm.js)",
+  "type": "module",
+  "main": "./dist/llm.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/llm.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite build --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@windowllm/protocol": "*",
+    "@windowllm/types": "*"
+  },
+  "devDependencies": {
+    "terser": "^5.44.1",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.0",
+    "vitest": "^4.0.16"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/windowllm/windowllm.git",
+    "directory": "packages/client"
+  },
+  "license": "MIT"
+}

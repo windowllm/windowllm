@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WindowLLM Test Page</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      padding: 20px;
+      max-width: 1200px;
+      margin: 0 auto;
+      background: #0a0a0a;
+      color: #e5e5e5;
+    }
+    h1 {
+      margin-bottom: 20px;
+      color: #fff;
+    }
+    h2 {
+      margin: 20px 0 10px;
+      color: #a0a0a0;
+      font-size: 14px;
+      text-transform: uppercase;
+    }
+    .status {
+      padding: 10px 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      font-weight: 500;
+    }
+    .status.loading {
+      background: #1e3a5f;
+      border: 1px solid #3b82f6;
+    }
+    .status.success {
+      background: #14532d;
+      border: 1px solid #22c55e;
+    }
+    .status.error {
+      background: #450a0a;
+      border: 1px solid #ef4444;
+    }
+    .test-group {
+      background: #171717;
+      border: 1px solid #262626;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    .test-result {
+      display: flex;
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px solid #262626;
+    }
+    .test-result:last-child {
+      border-bottom: none;
+    }
+    .test-name {
+      flex: 1;
+      font-family: monospace;
+    }
+    .test-status {
+      padding: 4px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .test-status.pass {
+      background: #166534;
+      color: #86efac;
+    }
+    .test-status.fail {
+      background: #991b1b;
+      color: #fca5a5;
+    }
+    .test-status.skip {
+      background: #525252;
+      color: #a3a3a3;
+    }
+    .test-status.running {
+      background: #1e40af;
+      color: #93c5fd;
+    }
+    .error-message {
+      margin-top: 5px;
+      padding: 10px;
+      background: #1f1f1f;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 12px;
+      color: #f87171;
+      white-space: pre-wrap;
+    }
+    #results {
+      margin-top: 20px;
+    }
+    pre {
+      background: #1f1f1f;
+      padding: 15px;
+      border-radius: 8px;
+      overflow-x: auto;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <h1>WindowLLM Test Page</h1>
+  <div id="status" class="status loading">Loading WindowLLM...</div>
+  <div id="test-results"></div>
+  <h2>Raw Results</h2>
+  <pre id="results">Waiting for tests...</pre>
+
+  <script type="module">
+    // Configure vault URL (use HTTPS in production, HTTP in local dev)
+    const protocol = window.location.protocol;
+    const vaultHost = 'windowllm.localhost:3100';
+    const vaultUrl = `${protocol}//${vaultHost}`;
+
+    window.WINDOWLLM_VAULT_URL = `${vaultUrl}/frame.html`;
+
+    // Test results storage
+    const testResults = [];
+
+    function updateStatus(message, type = 'loading') {
+      const status = document.getElementById('status');
+      status.textContent = message;
+      status.className = `status ${type}`;
+    }
+
+    function addTestResult(name, status, error = null) {
+      const result = { name, status, error: error?.message || error };
+      testResults.push(result);
+      renderResults();
+      return result;
+    }
+
+    function renderResults() {
+      const container = document.getElementById('test-results');
+      const groups = {};
+
+      for (const result of testResults) {
+        const [group] = result.name.split(':');
+        if (!groups[group]) {
+          groups[group] = [];
+        }
+        groups[group].push(result);
+      }
+
+      let html = '';
+      for (const [group, tests] of Object.entries(groups)) {
+        html += `<div class="test-group">`;
+        html += `<h2>${group}</h2>`;
+        for (const test of tests) {
+          html += `<div class="test-result">`;
+          html += `<span class="test-name">${test.name}</span>`;
+          html += `<span class="test-status ${test.status}">${test.status}</span>`;
+          html += `</div>`;
+          if (test.error) {
+            html += `<div class="error-message">${test.error}</div>`;
+          }
+        }
+        html += `</div>`;
+      }
+
+      container.innerHTML = html;
+      document.getElementById('results').textContent = JSON.stringify(testResults, null, 2);
+    }
+
+    async function runTest(name, testFn) {
+      addTestResult(name, 'running');
+      try {
+        await testFn();
+        testResults[testResults.length - 1].status = 'pass';
+        renderResults();
+      } catch (error) {
+        testResults[testResults.length - 1].status = 'fail';
+        testResults[testResults.length - 1].error = error?.message || String(error);
+        renderResults();
+      }
+    }
+
+    async function runTests() {
+      updateStatus('Running tests...', 'loading');
+
+      // API Availability Tests
+      await runTest('availability:window.llm exists', async () => {
+        if (!window.llm) throw new Error('window.llm is not defined');
+      });
+
+
+      await runTest('availability:window.llm.requestSession', async () => {
+        if (typeof window.llm.requestSession !== 'function') {
+          throw new Error('window.llm.requestSession is not a function');
+        }
+      });
+
+      await runTest('availability:window.llm.permissions', async () => {
+        if (!window.llm.permissions) {
+          throw new Error('window.llm.permissions is not defined');
+        }
+      });
+
+      await runTest('availability:window.llm.capabilities', async () => {
+        if (!window.llm.capabilities) {
+          throw new Error('window.llm.capabilities is not defined');
+        }
+      });
+
+      await runTest('availability:window.llm.models', async () => {
+        if (!window.llm.models) {
+          throw new Error('window.llm.models is not defined');
+        }
+      });
+
+      // Permission Tests (these may require user interaction or pre-setup)
+      await runTest('permissions:query', async () => {
+        const hasPermission = await window.llm.permissions.query('chat');
+        if (typeof hasPermission !== 'boolean') {
+          throw new Error('permissions.query() did not return a boolean');
+        }
+      });
+
+      // Model Tests
+      await runTest('models:list', async () => {
+        const models = await window.llm.models.list();
+        if (!Array.isArray(models)) {
+          throw new Error('models.list() did not return an array');
+        }
+      });
+
+      // Session Tests (only if we have permission)
+      const hasPermission = await window.llm.permissions.query('chat').catch(() => false);
+
+      if (hasPermission) {
+        await runTest('session:requestSession', async () => {
+          const session = await window.llm.requestSession();
+          if (!session) throw new Error('requestSession() returned null');
+          if (typeof session.complete !== 'function') {
+            throw new Error('session.complete is not a function');
+          }
+          if (typeof session.stream !== 'function') {
+            throw new Error('session.stream is not a function');
+          }
+        });
+
+        await runTest('session:complete', async () => {
+          const session = await window.llm.requestSession();
+          const result = await session.complete('Say "test" and nothing else.');
+          if (!result) throw new Error('complete() returned null');
+          if (!result.message) throw new Error('result.message is missing');
+        });
+
+        await runTest('session:stream', async () => {
+          const session = await window.llm.requestSession();
+          let chunks = [];
+          for await (const chunk of session.stream('Say "hello" and nothing else.')) {
+            chunks.push(chunk);
+            if (chunk.type === 'done') break;
+          }
+          if (chunks.length === 0) {
+            throw new Error('stream() yielded no chunks');
+          }
+          const doneChunk = chunks.find(c => c.type === 'done');
+          if (!doneChunk) {
+            throw new Error('stream() did not yield a done chunk');
+          }
+        });
+      } else {
+        addTestResult('session:requestSession', 'skip', 'No permission granted');
+        addTestResult('session:complete', 'skip', 'No permission granted');
+        addTestResult('session:stream', 'skip', 'No permission granted');
+      }
+
+      // Final status
+      const passed = testResults.filter(r => r.status === 'pass').length;
+      const failed = testResults.filter(r => r.status === 'fail').length;
+      const skipped = testResults.filter(r => r.status === 'skip').length;
+
+      if (failed > 0) {
+        updateStatus(`Tests complete: ${passed} passed, ${failed} failed, ${skipped} skipped`, 'error');
+      } else {
+        updateStatus(`Tests complete: ${passed} passed, ${skipped} skipped`, 'success');
+      }
+
+      // Expose results for Playwright
+      window.__testResults = testResults;
+      window.__testsDone = true;
+    }
+
+    // Load the client library
+    const script = document.createElement('script');
+    script.src = `${vaultUrl}/llm.js`;
+    script.onerror = () => {
+      updateStatus('Failed to load WindowLLM client library', 'error');
+      window.__testsDone = true;
+      window.__testResults = [{ name: 'load:llm.js', status: 'fail', error: 'Failed to load client library' }];
+    };
+    script.onload = () => {
+      // Wait for initialization
+      if (window.llm) {
+        runTests();
+      } else {
+        updateStatus('WindowLLM loaded but window.llm not available', 'error');
+        window.__testsDone = true;
+        window.__testResults = [{ name: 'load:llm.js', status: 'fail', error: 'window.llm not available after load' }];
+      }
+    };
+    document.head.appendChild(script);
+  </script>
+</body>
+</html>

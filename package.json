@@ -1,0 +1,48 @@
+{
+  "name": "windowllm",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Universal browser LLM API - giving users sovereignty over their AI",
+  "workspaces": [
+    "packages/*",
+    "spec"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "build:spec": "./spec/build.sh",
+    "build:extension": "npm run build --workspace=@windowllm/vault && npm run build:chrome --workspace=@windowllm/extension && cp packages/extension/manifest.json packages/extension/dist/ && cp -r packages/extension/icons packages/extension/dist/",
+    "build:extension:firefox": "npm run build --workspace=@windowllm/vault && npm run build:firefox --workspace=@windowllm/extension && cp packages/extension/manifest.firefox.json packages/extension/dist/manifest.json && cp -r packages/extension/icons packages/extension/dist/",
+    "build:extension:safari": "npm run build --workspace=@windowllm/vault && npm run build:safari --workspace=@windowllm/extension",
+    "dev": "npm run dev --workspace=@windowllm/vault",
+    "dev:examples": "npx vite --config examples/vite.config.ts",
+    "dev:test-vault": "VITE_PORT=3100 npm run dev --workspace=@windowllm/vault",
+    "dev:test-page": "npx vite --config tests/pages/vite.config.ts",
+    "setup:https": "./scripts/setup-local-https.sh",
+    "test": "npm test --workspaces --if-present",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/windowllm/windowllm.git"
+  },
+  "keywords": [
+    "llm",
+    "ai",
+    "browser",
+    "api",
+    "anthropic",
+    "openai",
+    "ollama"
+  ],
+  "author": "WindowLLM Contributors",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.57.0"
+  }
+}

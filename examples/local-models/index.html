@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WindowLLM - Local Models Example</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 2rem;
+      background: #1a1a2e;
+      color: #eee;
+    }
+    h1 { color: #e94560; }
+    .info-box {
+      background: #16213e;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+    .info-box h2 {
+      margin-top: 0;
+      color: #e94560;
+      font-size: 1.2rem;
+    }
+    .info-box p { color: #aaa; margin: 0.5rem 0; }
+    .info-box code {
+      background: #0f3460;
+      padding: 0.2rem 0.5rem;
+      border-radius: 3px;
+      font-family: 'SF Mono', Monaco, monospace;
+    }
+    .models-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .model-card {
+      background: #16213e;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 1rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .model-card:hover { border-color: #e94560; }
+    .model-card.selected {
+      border-color: #e94560;
+      background: #1a1a3e;
+    }
+    .model-card h3 {
+      margin: 0 0 0.5rem 0;
+      color: #fff;
+      font-size: 1rem;
+    }
+    .model-card p {
+      margin: 0;
+      font-size: 0.85rem;
+      color: #888;
+    }
+    .model-card .caps {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .cap {
+      font-size: 0.7rem;
+      padding: 0.2rem 0.5rem;
+      background: #0f3460;
+      border-radius: 3px;
+      color: #8899aa;
+    }
+    .cap.active { background: #17a2b8; color: white; }
+    .input-group {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+    textarea {
+      flex: 1;
+      padding: 0.75rem;
+      border: 1px solid #333;
+      border-radius: 4px;
+      background: #16213e;
+      color: #eee;
+      font-size: 1rem;
+      resize: vertical;
+      min-height: 80px;
+    }
+    button {
+      padding: 0.75rem 1.5rem;
+      background: #e94560;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 1rem;
+      align-self: flex-start;
+    }
+    button:hover { background: #ff6b6b; }
+    button:disabled { background: #666; cursor: not-allowed; }
+    #output {
+      background: #16213e;
+      border: 1px solid #333;
+      border-radius: 4px;
+      padding: 1rem;
+      min-height: 200px;
+      white-space: pre-wrap;
+      font-family: 'SF Mono', Monaco, monospace;
+      line-height: 1.5;
+    }
+    .error { color: #ff6b6b; }
+    .status { color: #888; font-size: 0.9rem; margin-bottom: 1rem; }
+    .ollama-status {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      background: #0f3460;
+      border-radius: 4px;
+      margin-bottom: 1rem;
+    }
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #666;
+    }
+    .status-dot.connected { background: #17a2b8; }
+    .status-dot.error { background: #ff6b6b; }
+    .pull-section {
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid #333;
+    }
+    .pull-section input {
+      flex: 1;
+      padding: 0.5rem;
+      background: #0f3460;
+      border: 1px solid #333;
+      border-radius: 4px;
+      color: #eee;
+    }
+    .progress-bar {
+      height: 4px;
+      background: #333;
+      border-radius: 2px;
+      overflow: hidden;
+      margin-top: 0.5rem;
+    }
+    .progress-bar .fill {
+      height: 100%;
+      background: #17a2b8;
+      transition: width 0.3s;
+    }
+  </style>
+</head>
+<body>
+  <h1>WindowLLM Local Models Example</h1>
+
+  <div class="info-box">
+    <h2>Using Local Models with Ollama</h2>
+    <p>This example demonstrates how to use local LLM models via Ollama.</p>
+    <p>
+      Make sure Ollama is running: <code>ollama serve</code><br>
+      And you have models pulled: <code>ollama pull llama3.2</code>
+    </p>
+  </div>
+
+  <div class="ollama-status">
+    <span class="status-dot" id="ollama-dot"></span>
+    <span id="ollama-status">Checking Ollama connection...</span>
+  </div>
+
+  <div class="status" id="status">Checking WindowLLM availability...</div>
+
+  <h2>Available Models</h2>
+  <div class="models-grid" id="models-grid">
+    <p style="color: #888;">Loading models...</p>
+  </div>
+
+  <div class="input-group">
+    <textarea id="prompt" placeholder="Ask anything..." disabled></textarea>
+    <button id="send" disabled>Send</button>
+  </div>
+
+  <div id="output">Response will appear here...</div>
+
+  <div class="pull-section">
+    <h3>Pull a New Model</h3>
+    <div class="input-group">
+      <input type="text" id="model-name" placeholder="Model name (e.g., llama3.2, mistral, codellama)">
+      <button id="pull-btn" disabled>Pull</button>
+    </div>
+    <div class="progress-bar" id="progress-bar" style="display: none;">
+      <div class="fill" id="progress-fill" style="width: 0%"></div>
+    </div>
+    <div id="pull-status" style="font-size: 0.85rem; color: #888; margin-top: 0.5rem;"></div>
+  </div>
+
+  <script>
+    (function() {
+      const isLocal = location.hostname === 'localhost' || location.hostname.endsWith('.localhost');
+      const vaultUrl = isLocal ? 'https://windowllm.localhost:3000' : 'https://windowllm.org';
+
+      // Set the vault frame URL for the client library
+      window.WINDOWLLM_VAULT_URL = `${vaultUrl}/frame.html`;
+
+      const script = document.createElement('script');
+      script.src = `${vaultUrl}/llm.js`;
+      script.onload = main;
+      script.onerror = () => {
+        document.getElementById('status').innerHTML =
+          '<span class="error">Failed to load WindowLLM library</span>';
+      };
+      document.head.appendChild(script);
+    })();
+
+    function main() {
+      const promptInput = document.getElementById('prompt');
+      const sendButton = document.getElementById('send');
+      const output = document.getElementById('output');
+      const status = document.getElementById('status');
+      const modelsGrid = document.getElementById('models-grid');
+      const ollamaDot = document.getElementById('ollama-dot');
+      const ollamaStatus = document.getElementById('ollama-status');
+      const modelNameInput = document.getElementById('model-name');
+      const pullBtn = document.getElementById('pull-btn');
+      const progressBar = document.getElementById('progress-bar');
+      const progressFill = document.getElementById('progress-fill');
+      const pullStatus = document.getElementById('pull-status');
+
+      let session = null;
+      let selectedModel = null;
+      let ollamaConnected = false;
+
+      // Check Ollama connection directly
+    async function checkOllama() {
+      try {
+        const response = await fetch('http://localhost:11434/api/tags');
+        if (response.ok) {
+          ollamaDot.className = 'status-dot connected';
+          ollamaStatus.textContent = 'Ollama connected at localhost:11434';
+          ollamaConnected = true;
+          pullBtn.disabled = false;
+          return true;
+        }
+      } catch (e) {
+        ollamaDot.className = 'status-dot error';
+        ollamaStatus.textContent = 'Ollama not running. Start with: ollama serve';
+        ollamaConnected = false;
+        return false;
+      }
+    }
+
+    async function init() {
+      // Check Ollama first
+      await checkOllama();
+
+      if (!window.llm?.available) {
+        status.innerHTML = '<span class="error">WindowLLM not available or not configured</span>';
+        modelsGrid.innerHTML = '<p style="color: #888;">Configure WindowLLM at windowllm.org to see available models.</p>';
+        return;
+      }
+
+      status.textContent = `WindowLLM v${window.llm.version} - Ready`;
+
+      // Get available models
+      try {
+        const models = await window.llm.models.list();
+        const localModels = models.filter(m => m.provider === 'ollama');
+
+        if (localModels.length === 0) {
+          modelsGrid.innerHTML = `
+            <p style="color: #888;">
+              No local models found. Make sure Ollama is running and you have models pulled.
+              <br><br>
+              Try: <code>ollama pull llama3.2</code>
+            </p>
+          `;
+          return;
+        }
+
+        modelsGrid.innerHTML = '';
+        localModels.forEach(model => {
+          const card = document.createElement('div');
+          card.className = 'model-card';
+          card.innerHTML = `
+            <h3>${model.name}</h3>
+            <p>${model.id}</p>
+            <div class="caps">
+              ${Object.entries(model.capabilities)
+                .filter(([_, v]) => v)
+                .map(([k]) => `<span class="cap active">${k}</span>`)
+                .join('')}
+            </div>
+          `;
+          card.onclick = () => selectModel(model, card);
+          modelsGrid.appendChild(card);
+        });
+
+        // Select first model by default
+        if (localModels.length > 0) {
+          selectModel(localModels[0], modelsGrid.querySelector('.model-card'));
+        }
+      } catch (error) {
+        modelsGrid.innerHTML = `<p class="error">Error loading models: ${error.message}</p>`;
+      }
+    }
+
+    async function selectModel(model, card) {
+      // Update UI
+      document.querySelectorAll('.model-card').forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
+      selectedModel = model;
+
+      // Create session with this model
+      try {
+        if (session) session.destroy();
+        session = await window.llm.requestSession({
+          model: model.id,
+        });
+
+        promptInput.disabled = false;
+        sendButton.disabled = false;
+        status.textContent = `Using ${model.name}`;
+      } catch (error) {
+        status.innerHTML = `<span class="error">Failed to create session: ${error.message}</span>`;
+      }
+    }
+
+    async function sendMessage() {
+      const prompt = promptInput.value.trim();
+      if (!prompt || !session) return;
+
+      sendButton.disabled = true;
+      output.textContent = '';
+
+      try {
+        let fullText = '';
+        for await (const chunk of session.stream(prompt)) {
+          if (chunk.type === 'text') {
+            fullText = chunk.accumulated;
+            output.textContent = fullText + '▊';
+          } else if (chunk.type === 'done') {
+            output.textContent = fullText;
+            const usage = chunk.result.usage;
+            status.textContent = `Done! Tokens: ${usage.inputTokens} in, ${usage.outputTokens} out`;
+          }
+        }
+      } catch (error) {
+        output.innerHTML = `<span class="error">Error: ${error.message}</span>`;
+      } finally {
+        sendButton.disabled = false;
+        promptInput.value = '';
+        promptInput.focus();
+      }
+    }
+
+    async function pullModel() {
+      const modelName = modelNameInput.value.trim();
+      if (!modelName || !ollamaConnected) return;
+
+      pullBtn.disabled = true;
+      progressBar.style.display = 'block';
+      progressFill.style.width = '0%';
+      pullStatus.textContent = 'Starting download...';
+
+      try {
+        const response = await fetch('http://localhost:11434/api/pull', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: modelName, stream: true }),
+        });
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const text = decoder.decode(value, { stream: true });
+          const lines = text.split('\n').filter(l => l.trim());
+
+          for (const line of lines) {
+            try {
+              const data = JSON.parse(line);
+              pullStatus.textContent = data.status || 'Downloading...';
+
+              if (data.total && data.completed) {
+                const percent = Math.round((data.completed / data.total) * 100);
+                progressFill.style.width = `${percent}%`;
+              }
+            } catch {}
+          }
+        }
+
+        pullStatus.textContent = 'Download complete! Refreshing models...';
+        progressFill.style.width = '100%';
+
+        // Refresh the models list
+        setTimeout(() => {
+          init();
+          progressBar.style.display = 'none';
+          modelNameInput.value = '';
+          pullStatus.textContent = '';
+        }, 1000);
+      } catch (error) {
+        pullStatus.innerHTML = `<span class="error">Error: ${error.message}</span>`;
+      } finally {
+        pullBtn.disabled = false;
+      }
+    }
+
+      sendButton.addEventListener('click', sendMessage);
+      promptInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          sendMessage();
+        }
+      });
+      pullBtn.addEventListener('click', pullModel);
+
+      init();
+    }
+  </script>
+</body>
+</html>

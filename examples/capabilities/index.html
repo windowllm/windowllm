@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WindowLLM - Model Discovery</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 1000px;
+      margin: 0 auto;
+      padding: 2rem;
+      background: #1a1a2e;
+      color: #eee;
+    }
+    h1 { color: #e94560; margin-bottom: 0.5rem; }
+    h2 { color: #e94560; font-size: 1.2rem; margin: 1.5rem 0 0.75rem 0; }
+    .subtitle { color: #888; margin-top: 0; }
+    .status { color: #888; font-size: 0.9rem; margin-bottom: 1rem; padding: 0.75rem; background: #16213e; border-radius: 4px; }
+    .error { color: #ff6b6b; }
+    .success { color: #4ade80; }
+
+    .provider-section {
+      background: #16213e;
+      border: 1px solid #333;
+      border-radius: 8px;
+      margin-bottom: 1rem;
+      overflow: hidden;
+    }
+    .provider-header {
+      background: #0f3460;
+      padding: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .provider-icon {
+      width: 32px;
+      height: 32px;
+      background: #e94560;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 14px;
+    }
+    .provider-name {
+      font-weight: 600;
+      font-size: 1.1rem;
+    }
+    .provider-count {
+      color: #888;
+      font-size: 0.9rem;
+      margin-left: auto;
+    }
+
+    .models-list {
+      padding: 0;
+    }
+    .model-item {
+      padding: 1rem;
+      border-top: 1px solid #333;
+    }
+    .model-item:first-child {
+      border-top: none;
+    }
+    .model-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+    }
+    .model-name {
+      font-weight: 500;
+    }
+    .model-id {
+      color: #666;
+      font-size: 0.8rem;
+      font-family: 'SF Mono', Monaco, monospace;
+    }
+
+    .capabilities {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+    }
+    .cap-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 500;
+    }
+    .cap-badge.enabled {
+      background: rgba(74, 222, 128, 0.15);
+      color: #4ade80;
+      border: 1px solid rgba(74, 222, 128, 0.3);
+    }
+    .cap-badge.disabled {
+      background: rgba(255, 255, 255, 0.05);
+      color: #666;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .limits {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      font-size: 0.85rem;
+      color: #888;
+    }
+    .limit-item {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+    .limit-value {
+      color: #e94560;
+      font-weight: 500;
+      font-family: 'SF Mono', Monaco, monospace;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+    }
+    .search-input {
+      flex: 1;
+      min-width: 200px;
+      padding: 0.5rem 1rem;
+      background: #16213e;
+      border: 1px solid #333;
+      border-radius: 4px;
+      color: #eee;
+      font-size: 0.9rem;
+    }
+    .search-input:focus {
+      outline: none;
+      border-color: #e94560;
+    }
+    .search-input::placeholder {
+      color: #666;
+    }
+    .refresh-btn {
+      padding: 0.5rem 1rem;
+      background: #e94560;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+    .refresh-btn:hover { background: #ff6b6b; }
+    .refresh-btn:disabled { background: #666; cursor: not-allowed; }
+    .match-count {
+      color: #888;
+      font-size: 0.85rem;
+      padding: 0.5rem 0;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 3rem;
+      color: #666;
+    }
+
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .summary-card {
+      background: #16213e;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 1rem;
+      text-align: center;
+    }
+    .summary-value {
+      font-size: 2rem;
+      font-weight: bold;
+      color: #e94560;
+    }
+    .summary-label {
+      font-size: 0.85rem;
+      color: #888;
+      margin-top: 0.25rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>Model Discovery</h1>
+  <p class="subtitle">Explore available providers, models, and their capabilities</p>
+
+  <div class="status" id="status">Checking WindowLLM availability...</div>
+
+  <div class="toolbar">
+    <input type="text" class="search-input" id="search" placeholder="Search models..." disabled>
+    <button class="refresh-btn" id="refresh" disabled>Refresh</button>
+  </div>
+
+  <div class="summary" id="summary" style="display: none;">
+    <div class="summary-card">
+      <div class="summary-value" id="provider-count">0</div>
+      <div class="summary-label">Providers</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-value" id="model-count">0</div>
+      <div class="summary-label">Models</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-value" id="vision-count">0</div>
+      <div class="summary-label">Vision Models</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-value" id="tools-count">0</div>
+      <div class="summary-label">Tool-Capable</div>
+    </div>
+  </div>
+
+  <div id="output"></div>
+
+  <script>
+    (function() {
+      const isLocal = location.hostname === 'localhost' || location.hostname.endsWith('.localhost');
+      const vaultUrl = isLocal ? 'https://windowllm.localhost:3000' : 'https://windowllm.org';
+      window.WINDOWLLM_VAULT_URL = `${vaultUrl}/frame.html`;
+
+      const script = document.createElement('script');
+      script.src = `${vaultUrl}/llm.js`;
+      script.onload = main;
+      script.onerror = () => {
+        document.getElementById('status').innerHTML =
+          '<span class="error">Failed to load WindowLLM library</span>';
+      };
+      document.head.appendChild(script);
+    })();
+
+    const CAPABILITY_INFO = {
+      chat: { icon: '💬', label: 'Chat' },
+      streaming: { icon: '⚡', label: 'Streaming' },
+      vision: { icon: '👁️', label: 'Vision' },
+      tools: { icon: '🔧', label: 'Tools' },
+      embeddings: { icon: '📊', label: 'Embeddings' },
+      jsonMode: { icon: '{}', label: 'JSON Mode' },
+      systemPrompt: { icon: '📝', label: 'System Prompt' },
+      multiTurn: { icon: '🔄', label: 'Multi-turn' },
+      audioInput: { icon: '🎤', label: 'Audio In' },
+      audioOutput: { icon: '🔊', label: 'Audio Out' },
+    };
+
+    const PROVIDER_ICONS = {
+      anthropic: 'A',
+      openai: 'O',
+      openrouter: 'OR',
+      ollama: '🦙',
+      custom: '⚙️',
+    };
+
+    function formatNumber(num) {
+      if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+      if (num >= 1000) return (num / 1000).toFixed(0) + 'K';
+      return num.toString();
+    }
+
+    function getProviderFromId(modelId) {
+      const parts = modelId.split('/');
+      return parts.length > 1 ? parts[0] : 'unknown';
+    }
+
+    function renderCapabilities(capabilities) {
+      const caps = Object.entries(CAPABILITY_INFO);
+      return caps.map(([key, info]) => {
+        const enabled = capabilities[key];
+        return `<span class="cap-badge ${enabled ? 'enabled' : 'disabled'}">${info.icon} ${info.label}</span>`;
+      }).join('');
+    }
+
+    function renderLimits(limits) {
+      const items = [];
+      if (limits.contextWindow) {
+        items.push(`<span class="limit-item">Context: <span class="limit-value">${formatNumber(limits.contextWindow)}</span></span>`);
+      }
+      if (limits.maxOutputTokens) {
+        items.push(`<span class="limit-item">Max Output: <span class="limit-value">${formatNumber(limits.maxOutputTokens)}</span></span>`);
+      }
+      if (limits.maxImageCount) {
+        items.push(`<span class="limit-item">Images: <span class="limit-value">${limits.maxImageCount}</span></span>`);
+      }
+      if (limits.embeddingDimensions) {
+        items.push(`<span class="limit-item">Dimensions: <span class="limit-value">${limits.embeddingDimensions}</span></span>`);
+      }
+      return items.join('');
+    }
+
+    let allModels = [];
+
+    function renderModels(models, isFiltered = false) {
+      const output = document.getElementById('output');
+      const summary = document.getElementById('summary');
+
+      if (allModels.length === 0) {
+        output.innerHTML = '<div class="empty-state">No models available. Configure providers at windowllm.org</div>';
+        summary.style.display = 'none';
+        return;
+      }
+
+      if (models.length === 0 && isFiltered) {
+        output.innerHTML = '<div class="empty-state">No models match your search</div>';
+        return;
+      }
+
+      // Group by provider
+      const byProvider = {};
+      for (const model of models) {
+        const provider = model.provider || getProviderFromId(model.id);
+        if (!byProvider[provider]) {
+          byProvider[provider] = [];
+        }
+        byProvider[provider].push(model);
+      }
+
+      // Update summary (always show totals, not filtered counts)
+      const visionCount = allModels.filter(m => m.capabilities?.vision).length;
+      const toolsCount = allModels.filter(m => m.capabilities?.tools).length;
+
+      document.getElementById('provider-count').textContent = Object.keys(byProvider).length;
+      document.getElementById('model-count').textContent = isFiltered
+        ? `${models.length}/${allModels.length}`
+        : allModels.length;
+      document.getElementById('vision-count').textContent = visionCount;
+      document.getElementById('tools-count').textContent = toolsCount;
+      summary.style.display = 'grid';
+
+      // Render providers and models
+      let html = '';
+      for (const [provider, providerModels] of Object.entries(byProvider)) {
+        const icon = PROVIDER_ICONS[provider] || provider.charAt(0).toUpperCase();
+
+        html += `
+          <div class="provider-section">
+            <div class="provider-header">
+              <div class="provider-icon">${icon}</div>
+              <span class="provider-name">${provider.charAt(0).toUpperCase() + provider.slice(1)}</span>
+              <span class="provider-count">${providerModels.length} model${providerModels.length !== 1 ? 's' : ''}</span>
+            </div>
+            <div class="models-list">
+        `;
+
+        for (const model of providerModels) {
+          html += `
+            <div class="model-item">
+              <div class="model-header">
+                <span class="model-name">${model.name}</span>
+                <span class="model-id">${model.id}</span>
+              </div>
+              <div class="capabilities">
+                ${renderCapabilities(model.capabilities || {})}
+              </div>
+              <div class="limits">
+                ${renderLimits(model.limits || {})}
+              </div>
+            </div>
+          `;
+        }
+
+        html += '</div></div>';
+      }
+
+      output.innerHTML = html;
+    }
+
+    function filterModels(query) {
+      if (!query.trim()) {
+        renderModels(allModels, false);
+        return;
+      }
+
+      const lowerQuery = query.toLowerCase();
+      const filtered = allModels.filter(model =>
+        model.name.toLowerCase().includes(lowerQuery) ||
+        model.id.toLowerCase().includes(lowerQuery)
+      );
+      renderModels(filtered, true);
+    }
+
+    async function loadModels() {
+      const status = document.getElementById('status');
+      const refreshBtn = document.getElementById('refresh');
+      const searchInput = document.getElementById('search');
+
+      refreshBtn.disabled = true;
+      searchInput.disabled = true;
+      status.innerHTML = 'Loading models...';
+
+      try {
+        allModels = await window.llm.models.list();
+        status.innerHTML = `<span class="success">Loaded ${allModels.length} models</span>`;
+        searchInput.disabled = false;
+        filterModels(searchInput.value);
+      } catch (error) {
+        status.innerHTML = `<span class="error">Failed to load models: ${error.message}</span>`;
+      } finally {
+        refreshBtn.disabled = false;
+      }
+    }
+
+    async function main() {
+      const status = document.getElementById('status');
+      const refreshBtn = document.getElementById('refresh');
+      const searchInput = document.getElementById('search');
+
+      if (!window.llm) {
+        status.innerHTML = '<span class="error">WindowLLM not available</span>';
+        return;
+      }
+
+      try {
+        await window.llm.waitForReady();
+      } catch (error) {
+        status.innerHTML = '<span class="error">WindowLLM not configured. Please visit windowllm.org to set up.</span>';
+        return;
+      }
+
+      status.textContent = `WindowLLM v${window.llm.version} (${window.llm.provider}) - Ready`;
+      refreshBtn.disabled = false;
+      refreshBtn.addEventListener('click', loadModels);
+      searchInput.addEventListener('input', (e) => filterModels(e.target.value));
+
+      // Auto-load on start
+      await loadModels();
+    }
+  </script>
+</body>
+</html>

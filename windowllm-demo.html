@@ -1,0 +1,10 @@
+<!doctype html>
+<script src="https://windowllm.org/llm.js"></script>
+<script>
+    async function chat() {
+        const session = await window.llm.requestSession();
+        const result = await session.complete("Hello!");
+        console.log(result.message.content);
+    }
+    chat();
+</script>

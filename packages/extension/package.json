@@ -1,0 +1,34 @@
+{
+  "name": "@windowllm/extension",
+  "version": "0.1.0",
+  "description": "WindowLLM browser extension",
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "build:with-ui": "vite build && cp -r ../vault/dist/assets dist/ && cp ../vault/dist/extension-popup.html dist/popup.html && cp ../vault/dist/extension-options.html dist/options.html && sed -i '' 's|/assets/|assets/|g' dist/popup.html dist/options.html",
+    "build:chrome": "npm run build:with-ui",
+    "build:firefox": "npm run build:with-ui",
+    "build:safari": "npm run build:with-ui && cp manifest.json dist/ && cp -r icons dist/ && xcrun safari-web-extension-converter dist --app-name WindowLLM --bundle-identifier org.windowllm.WindowLLM --swift --macos-only --no-prompt --no-open --force --project-location safari-project && xcodebuild -project safari-project/WindowLLM/WindowLLM.xcodeproj -scheme WindowLLM -configuration Release build CONFIGURATION_BUILD_DIR=../build",
+    "dev": "vite build --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@windowllm/types": "*",
+    "@windowllm/protocol": "*",
+    "@windowllm/adapters": "*"
+  },
+  "devDependencies": {
+    "@anthropic-ai/sdk": "^0.71.2",
+    "openai": "^6.15.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.0",
+    "vitest": "^4.0.16"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/windowllm/windowllm.git",
+    "directory": "packages/extension"
+  },
+  "license": "MIT"
+}

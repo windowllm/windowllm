@@ -1,0 +1,55 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test coverage
+coverage/
+
+# Playwright test results
+test-results/
+playwright-report/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Package manager locks (keep package-lock.json)
+yarn.lock
+pnpm-lock.yaml
+
+# Extension builds
+*.crx
+*.xpi
+*.zip
+safari-project/
+
+# Spec build output
+spec/*.html
+
+# Local development certificates
+.certs/
