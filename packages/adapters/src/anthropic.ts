@@ -14,6 +14,7 @@ import type {
   ContentPart,
 } from '@windowllm/types';
 
+import { mapHttpError } from './index.js';
 import type {
   ProviderAdapter,
   ProviderConfig,
@@ -37,9 +38,13 @@ interface AnthropicMessage {
   content: string | AnthropicContentBlock[];
 }
 
+type AnthropicImageSource =
+  | { type: 'base64'; media_type: string; data: string }
+  | { type: 'url'; url: string };
+
 type AnthropicContentBlock =
   | { type: 'text'; text: string }
-  | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } }
+  | { type: 'image'; source: AnthropicImageSource }
   | { type: 'tool_use'; id: string; name: string; input: object }
   | { type: 'tool_result'; tool_use_id: string; content: string | AnthropicContentBlock[] };
 
@@ -55,7 +60,9 @@ interface AnthropicResponse {
   role: 'assistant';
   content: AnthropicContentBlock[];
   model: string;
-  stop_reason: 'end_turn' | 'max_tokens' | 'stop_sequence' | 'tool_use';
+  // Current Claude models can also return 'refusal', 'pause_turn', and
+  // 'model_context_window_exceeded'; keep the type open.
+  stop_reason: string;
   stop_sequence: string | null;
   usage: {
     input_tokens: number;
@@ -78,151 +85,59 @@ interface AnthropicStreamEvent {
     input_tokens?: number;
     output_tokens?: number;
   };
+  error?: {
+    type: string;
+    message: string;
+  };
 }
 
+/** Shape of an entry from GET /v1/models (fields added Mar 2026). */
+interface AnthropicModelInfo {
+  id: string;
+  display_name?: string;
+  max_input_tokens?: number;
+  max_tokens?: number;
+  capabilities?: {
+    image_input?: { supported?: boolean };
+    structured_outputs?: { supported?: boolean };
+  };
+}
+
+/** Capabilities shared by all current Claude text models. */
+const STANDARD_CAPABILITIES: ModelCapabilities = {
+  chat: true,
+  streaming: true,
+  vision: true,
+  tools: true,
+  embeddings: false,
+  jsonMode: true,        // structured outputs are GA on current models
+  systemPrompt: true,
+  multiTurn: true,
+  audioInput: false,
+  audioOutput: false,
+};
+
 /**
- * Known Anthropic models with capabilities
+ * Static fallback catalog, used only when GET /v1/models is unavailable
+ * (offline, network error). listModels() prefers the live Models API, which is
+ * the authoritative source for the catalog, limits, and capabilities — so this
+ * list does not need to be exhaustive, just current enough to be useful.
  */
-const KNOWN_MODELS: Record<string, { name: string; capabilities: ModelCapabilities; limits: ModelLimits }> = {
-  'claude-opus-4-20250514': {
-    name: 'Claude Opus 4',
-    capabilities: {
-      chat: true,
-      streaming: true,
-      vision: true,
-      tools: true,
-      embeddings: false,
-      jsonMode: false,
-      systemPrompt: true,
-      multiTurn: true,
-      audioInput: false,
-      audioOutput: false,
-    },
-    limits: {
-      contextWindow: 200000,
-      maxOutputTokens: 32000,
-      maxImageCount: 20,
-    },
+const FALLBACK_MODELS: Record<string, { name: string; capabilities: ModelCapabilities; limits: ModelLimits }> = {
+  'claude-opus-4-8': {
+    name: 'Claude Opus 4.8',
+    capabilities: STANDARD_CAPABILITIES,
+    limits: { contextWindow: 1_000_000, maxOutputTokens: 128_000, maxImageCount: 100 },
   },
-  'claude-sonnet-4-20250514': {
-    name: 'Claude Sonnet 4',
-    capabilities: {
-      chat: true,
-      streaming: true,
-      vision: true,
-      tools: true,
-      embeddings: false,
-      jsonMode: false,
-      systemPrompt: true,
-      multiTurn: true,
-      audioInput: false,
-      audioOutput: false,
-    },
-    limits: {
-      contextWindow: 200000,
-      maxOutputTokens: 64000,
-      maxImageCount: 20,
-    },
+  'claude-sonnet-5': {
+    name: 'Claude Sonnet 5',
+    capabilities: STANDARD_CAPABILITIES,
+    limits: { contextWindow: 1_000_000, maxOutputTokens: 128_000, maxImageCount: 100 },
   },
-  'claude-3-5-sonnet-20241022': {
-    name: 'Claude 3.5 Sonnet',
-    capabilities: {
-      chat: true,
-      streaming: true,
-      vision: true,
-      tools: true,
-      embeddings: false,
-      jsonMode: false,
-      systemPrompt: true,
-      multiTurn: true,
-      audioInput: false,
-      audioOutput: false,
-    },
-    limits: {
-      contextWindow: 200000,
-      maxOutputTokens: 8192,
-      maxImageCount: 20,
-    },
-  },
-  'claude-3-5-haiku-20241022': {
-    name: 'Claude 3.5 Haiku',
-    capabilities: {
-      chat: true,
-      streaming: true,
-      vision: true,
-      tools: true,
-      embeddings: false,
-      jsonMode: false,
-      systemPrompt: true,
-      multiTurn: true,
-      audioInput: false,
-      audioOutput: false,
-    },
-    limits: {
-      contextWindow: 200000,
-      maxOutputTokens: 8192,
-      maxImageCount: 20,
-    },
-  },
-  'claude-3-opus-20240229': {
-    name: 'Claude 3 Opus',
-    capabilities: {
-      chat: true,
-      streaming: true,
-      vision: true,
-      tools: true,
-      embeddings: false,
-      jsonMode: false,
-      systemPrompt: true,
-      multiTurn: true,
-      audioInput: false,
-      audioOutput: false,
-    },
-    limits: {
-      contextWindow: 200000,
-      maxOutputTokens: 4096,
-      maxImageCount: 20,
-    },
-  },
-  'claude-3-sonnet-20240229': {
-    name: 'Claude 3 Sonnet',
-    capabilities: {
-      chat: true,
-      streaming: true,
-      vision: true,
-      tools: true,
-      embeddings: false,
-      jsonMode: false,
-      systemPrompt: true,
-      multiTurn: true,
-      audioInput: false,
-      audioOutput: false,
-    },
-    limits: {
-      contextWindow: 200000,
-      maxOutputTokens: 4096,
-      maxImageCount: 20,
-    },
-  },
-  'claude-3-haiku-20240307': {
-    name: 'Claude 3 Haiku',
-    capabilities: {
-      chat: true,
-      streaming: true,
-      vision: true,
-      tools: true,
-      embeddings: false,
-      jsonMode: false,
-      systemPrompt: true,
-      multiTurn: true,
-      audioInput: false,
-      audioOutput: false,
-    },
-    limits: {
-      contextWindow: 200000,
-      maxOutputTokens: 4096,
-      maxImageCount: 20,
-    },
+  'claude-haiku-4-5': {
+    name: 'Claude Haiku 4.5',
+    capabilities: STANDARD_CAPABILITIES,
+    limits: { contextWindow: 200_000, maxOutputTokens: 64_000, maxImageCount: 100 },
   },
 };
 
@@ -234,6 +149,7 @@ export class AnthropicAdapter implements ProviderAdapter {
   readonly name = 'Anthropic';
   private config: AnthropicConfig;
   private baseUrl: string;
+  private modelsCache: LLMModel[] | null = null;
 
   constructor(config: AnthropicConfig) {
     this.config = config;
@@ -256,31 +172,77 @@ export class AnthropicAdapter implements ProviderAdapter {
   }
 
   async listModels(): Promise<LLMModel[]> {
-    // Anthropic doesn't have a models list endpoint, return known models
-    return Object.entries(KNOWN_MODELS).map(([id, info]) => ({
+    if (this.modelsCache) return this.modelsCache;
+
+    // Anthropic ships a live Models API (GA); it returns the authoritative
+    // catalog with per-model limits and capabilities. Fall back to the static
+    // list only if the request fails (offline, auth error, etc.).
+    try {
+      const response = await fetch(`${this.baseUrl}/v1/models?limit=100`, {
+        method: 'GET',
+        headers: this.getHeaders(),
+      });
+      if (response.ok) {
+        const body = await response.json() as { data?: AnthropicModelInfo[] };
+        const models = (body.data ?? []).map(m => this.mapApiModel(m));
+        if (models.length > 0) {
+          this.modelsCache = models;
+          return models;
+        }
+      }
+    } catch {
+      // fall through to the static fallback
+    }
+
+    return this.fallbackModels();
+  }
+
+  async getModel(id: string): Promise<LLMModel | null> {
+    const modelId = id.startsWith('anthropic/') ? id.slice(10) : id;
+    const models = await this.listModels();
+    const found = models.find(m => m.id === `anthropic/${modelId}`);
+    if (found) return found;
+
+    const fallback = FALLBACK_MODELS[modelId];
+    if (fallback) {
+      return {
+        id: `anthropic/${modelId}`,
+        name: fallback.name,
+        provider: this.id,
+        capabilities: fallback.capabilities,
+        limits: fallback.limits,
+      };
+    }
+
+    return null;
+  }
+
+  private mapApiModel(m: AnthropicModelInfo): LLMModel {
+    return {
+      id: `anthropic/${m.id}`,
+      name: m.display_name ?? m.id,
+      provider: this.id,
+      capabilities: {
+        ...STANDARD_CAPABILITIES,
+        vision: m.capabilities?.image_input?.supported ?? STANDARD_CAPABILITIES.vision,
+        jsonMode: m.capabilities?.structured_outputs?.supported ?? STANDARD_CAPABILITIES.jsonMode,
+      },
+      limits: {
+        contextWindow: m.max_input_tokens ?? 200_000,
+        maxOutputTokens: m.max_tokens ?? 8192,
+        maxImageCount: 100,
+      },
+    };
+  }
+
+  private fallbackModels(): LLMModel[] {
+    return Object.entries(FALLBACK_MODELS).map(([id, info]) => ({
       id: `anthropic/${id}`,
       name: info.name,
       provider: this.id,
       capabilities: info.capabilities,
       limits: info.limits,
     }));
-  }
-
-  async getModel(id: string): Promise<LLMModel | null> {
-    const modelId = id.startsWith('anthropic/') ? id.slice(10) : id;
-    const known = KNOWN_MODELS[modelId];
-
-    if (known) {
-      return {
-        id: `anthropic/${modelId}`,
-        name: known.name,
-        provider: this.id,
-        capabilities: known.capabilities,
-        limits: known.limits,
-      };
-    }
-
-    return null;
   }
 
   async complete(request: NormalizedRequest): Promise<NormalizedResponse> {
@@ -290,11 +252,12 @@ export class AnthropicAdapter implements ProviderAdapter {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify(body),
+      signal: request.signal,
     });
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.error?.message || `Anthropic API error: ${response.statusText}`);
+      throw mapHttpError(response.status, error.error?.message || response.statusText, response.headers);
     }
 
     const data = await response.json() as AnthropicResponse;
@@ -309,11 +272,12 @@ export class AnthropicAdapter implements ProviderAdapter {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify(body),
+      signal: request.signal,
     });
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.error?.message || `Anthropic API error: ${response.statusText}`);
+      throw mapHttpError(response.status, error.error?.message || response.statusText, response.headers);
     }
 
     const reader = response.body?.getReader();
@@ -377,7 +341,9 @@ export class AnthropicAdapter implements ProviderAdapter {
                     toolCall: {
                       id: currentToolCall.id,
                       name: currentToolCall.name,
-                      arguments: currentToolCall.arguments,
+                      // A tool with no parameters produces no input_json_delta;
+                      // emit valid empty-object JSON rather than "".
+                      arguments: currentToolCall.arguments || '{}',
                       complete: true,
                     },
                   };
@@ -404,6 +370,11 @@ export class AnthropicAdapter implements ProviderAdapter {
               case 'message_stop':
                 yield { type: 'done' };
                 break;
+
+              case 'error':
+                // Anthropic can emit a terminal error mid-stream (e.g.
+                // overloaded_error). Surface it instead of ending silently.
+                throw new Error(event.error?.message || `Anthropic stream error: ${event.error?.type || 'unknown'}`);
             }
           } catch {
             // Skip invalid JSON
@@ -411,6 +382,9 @@ export class AnthropicAdapter implements ProviderAdapter {
         }
       }
     } finally {
+      // cancel() aborts the underlying HTTP stream so the provider stops
+      // generating (and billing) when the consumer stops early.
+      await reader.cancel().catch(() => {});
       reader.releaseLock();
     }
   }
@@ -421,17 +395,13 @@ export class AnthropicAdapter implements ProviderAdapter {
 
   async testConnection(): Promise<boolean> {
     try {
-      // Send a minimal request to test the connection
-      const response = await fetch(`${this.baseUrl}/v1/messages`, {
-        method: 'POST',
+      // A GET to the Models API validates the key without spending tokens and
+      // without depending on any particular (possibly-retired) model id.
+      const response = await fetch(`${this.baseUrl}/v1/models?limit=1`, {
+        method: 'GET',
         headers: this.getHeaders(),
-        body: JSON.stringify({
-          model: 'claude-3-haiku-20240307',
-          max_tokens: 1,
-          messages: [{ role: 'user', content: 'Hi' }],
-        }),
       });
-      return response.ok || response.status === 400; // 400 means auth worked but request was bad
+      return response.ok;
     } catch {
       return false;
     }
@@ -448,7 +418,8 @@ export class AnthropicAdapter implements ProviderAdapter {
     const body: Record<string, unknown> = {
       model,
       messages,
-      max_tokens: request.maxTokens || 4096,
+      // Use ?? so an explicit 0 isn't silently replaced (though 0 is invalid).
+      max_tokens: request.maxTokens ?? 4096,
     };
 
     if (request.systemPrompt) {
@@ -536,6 +507,11 @@ export class AnthropicAdapter implements ProviderAdapter {
       if (part.type === 'text') {
         return { type: 'text' as const, text: part.text };
       } else if (part.type === 'image') {
+        // ImageContent.data may be a remote URL or base64. Anthropic accepts a
+        // url source directly; don't wrap a URL as base64.
+        if (/^https?:\/\//i.test(part.data)) {
+          return { type: 'image' as const, source: { type: 'url' as const, url: part.data } };
+        }
         const mediaType = part.mimeType || 'image/png';
         const data = part.data.startsWith('data:')
           ? part.data.split(',')[1] || part.data
@@ -598,11 +574,15 @@ export class AnthropicAdapter implements ProviderAdapter {
     switch (reason) {
       case 'end_turn':
       case 'stop_sequence':
+      case 'pause_turn':
         return 'complete';
       case 'max_tokens':
+      case 'model_context_window_exceeded':
         return 'length';
       case 'tool_use':
         return 'tool_use';
+      case 'refusal':
+        return 'content_filter';
       default:
         return 'complete';
     }

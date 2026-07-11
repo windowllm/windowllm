@@ -21,6 +21,7 @@ import type {
   NormalizedResponse,
   NormalizedChunk,
 } from './index.js';
+import { mapHttpError } from './index.js';
 
 /**
  * OpenRouter-specific configuration
@@ -215,11 +216,12 @@ export class OpenRouterAdapter implements ProviderAdapter {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify(body),
+      signal: request.signal,
     });
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.error?.message || `OpenRouter API error: ${response.statusText}`);
+      throw mapHttpError(response.status, error.error?.message || response.statusText, response.headers);
     }
 
     const data = await response.json() as OpenAICompletionResponse;
@@ -234,11 +236,12 @@ export class OpenRouterAdapter implements ProviderAdapter {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify(body),
+      signal: request.signal,
     });
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.error?.message || `OpenRouter API error: ${response.statusText}`);
+      throw mapHttpError(response.status, error.error?.message || response.statusText, response.headers);
     }
 
     const reader = response.body?.getReader();
@@ -267,6 +270,20 @@ export class OpenRouterAdapter implements ProviderAdapter {
 
           try {
             const chunk = JSON.parse(data) as OpenAIStreamChunk;
+
+            // Usage arrives on a final chunk with empty `choices`; handle it
+            // before the empty-choices guard or token accounting is lost.
+            if (chunk.usage) {
+              yield {
+                type: 'usage',
+                usage: {
+                  inputTokens: chunk.usage.prompt_tokens,
+                  outputTokens: chunk.usage.completion_tokens,
+                  totalTokens: chunk.usage.total_tokens,
+                },
+              };
+            }
+
             const choice = chunk.choices[0];
 
             if (!choice) continue;
@@ -302,22 +319,15 @@ export class OpenRouterAdapter implements ProviderAdapter {
               }
             }
 
-            if (chunk.usage) {
-              yield {
-                type: 'usage',
-                usage: {
-                  inputTokens: chunk.usage.prompt_tokens,
-                  outputTokens: chunk.usage.completion_tokens,
-                  totalTokens: chunk.usage.total_tokens,
-                },
-              };
-            }
           } catch {
             // Skip invalid JSON
           }
         }
       }
     } finally {
+      // cancel() aborts the underlying HTTP stream so the provider stops
+      // generating (and billing) when the consumer stops early.
+      await reader.cancel().catch(() => {});
       reader.releaseLock();
     }
   }
@@ -336,7 +346,7 @@ export class OpenRouterAdapter implements ProviderAdapter {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.error?.message || `OpenRouter API error: ${response.statusText}`);
+      throw mapHttpError(response.status, error.error?.message || response.statusText, response.headers);
     }
 
     const data = await response.json() as {

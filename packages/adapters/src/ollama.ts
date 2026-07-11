@@ -21,6 +21,7 @@ import type {
   NormalizedResponse,
   NormalizedChunk,
 } from './index.js';
+import { mapHttpError } from './index.js';
 
 /**
  * Ollama-specific configuration
@@ -41,12 +42,14 @@ interface OllamaMessage {
   tool_call_id?: string;
 }
 
+/**
+ * Ollama tool call. Note the wire format differs from OpenAI's: there is no
+ * `id` or `type`, and `arguments` is a JSON object, not a stringified JSON.
+ */
 interface OllamaToolCall {
-  id: string;
-  type: 'function';
   function: {
     name: string;
-    arguments: string;
+    arguments: Record<string, unknown>;
   };
 }
 
@@ -188,11 +191,12 @@ export class OllamaAdapter implements ProviderAdapter {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      signal: request.signal,
     });
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.error || `Ollama API error: ${response.statusText}`);
+      throw mapHttpError(response.status, error.error || response.statusText, response.headers);
     }
 
     const data = await response.json() as OllamaChatResponse;
@@ -207,11 +211,12 @@ export class OllamaAdapter implements ProviderAdapter {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      signal: request.signal,
     });
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.error || `Ollama API error: ${response.statusText}`);
+      throw mapHttpError(response.status, error.error || response.statusText, response.headers);
     }
 
     const reader = response.body?.getReader();
@@ -242,13 +247,16 @@ export class OllamaAdapter implements ProviderAdapter {
             }
 
             if (chunk.message?.tool_calls) {
+              let idx = 0;
               for (const tc of chunk.message.tool_calls) {
                 yield {
                   type: 'tool_call',
                   toolCall: {
-                    id: tc.id,
+                    // Ollama tool calls have no id; synthesize a stable one.
+                    id: `call_${idx++}_${tc.function.name}`,
                     name: tc.function.name,
-                    arguments: tc.function.arguments,
+                    // NormalizedChunk carries arguments as a JSON string.
+                    arguments: JSON.stringify(tc.function.arguments ?? {}),
                     complete: true,
                   },
                 };
@@ -274,6 +282,9 @@ export class OllamaAdapter implements ProviderAdapter {
         }
       }
     } finally {
+      // cancel() aborts the underlying HTTP stream so the model stops
+      // generating when the consumer stops early.
+      await reader.cancel().catch(() => {});
       reader.releaseLock();
     }
   }
@@ -362,8 +373,14 @@ export class OllamaAdapter implements ProviderAdapter {
   private buildRequestBody(request: NormalizedRequest): Record<string, unknown> {
     const messages = this.convertMessages(request.messages, request.systemPrompt);
 
+    // Strip the registry prefix (e.g. "ollama/llama3.1:8b" -> "llama3.1:8b");
+    // listModels() namespaces ids, but the wire API expects the bare name.
+    const model = request.model.startsWith('ollama/')
+      ? request.model.slice(7)
+      : request.model;
+
     const body: Record<string, unknown> = {
-      model: request.model,
+      model,
       messages,
     };
 
@@ -421,11 +438,10 @@ export class OllamaAdapter implements ProviderAdapter {
 
         if (msg.toolCalls?.length) {
           ollamaMsg.tool_calls = msg.toolCalls.map(tc => ({
-            id: tc.id,
-            type: 'function' as const,
             function: {
               name: tc.name,
-              arguments: JSON.stringify(tc.arguments),
+              // Ollama expects arguments as an object, not a JSON string.
+              arguments: tc.arguments,
             },
           }));
         }
@@ -484,13 +500,15 @@ export class OllamaAdapter implements ProviderAdapter {
     const toolCalls: ToolCall[] = [];
 
     if (data.message.tool_calls) {
-      for (const tc of data.message.tool_calls) {
+      data.message.tool_calls.forEach((tc, i) => {
         toolCalls.push({
-          id: tc.id,
+          // Ollama tool calls have no id; synthesize a stable one for correlation.
+          id: `call_${i}_${tc.function.name}`,
           name: tc.function.name,
-          arguments: JSON.parse(tc.function.arguments),
+          // arguments is already a JSON object on the wire — no parse needed.
+          arguments: tc.function.arguments,
         });
-      }
+      });
     }
 
     const inputTokens = data.prompt_eval_count || 0;

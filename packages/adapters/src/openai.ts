@@ -21,6 +21,7 @@ import type {
   NormalizedResponse,
   NormalizedChunk,
 } from './index.js';
+import { mapHttpError } from './index.js';
 
 /**
  * OpenAI-specific configuration
@@ -356,11 +357,12 @@ export class OpenAIAdapter implements ProviderAdapter {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify(body),
+      signal: request.signal,
     });
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.error?.message || `OpenAI API error: ${response.statusText}`);
+      throw mapHttpError(response.status, error.error?.message || response.statusText, response.headers);
     }
 
     const data = await response.json() as OpenAICompletionResponse;
@@ -376,11 +378,12 @@ export class OpenAIAdapter implements ProviderAdapter {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify(body),
+      signal: request.signal,
     });
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.error?.message || `OpenAI API error: ${response.statusText}`);
+      throw mapHttpError(response.status, error.error?.message || response.statusText, response.headers);
     }
 
     const reader = response.body?.getReader();
@@ -409,6 +412,21 @@ export class OpenAIAdapter implements ProviderAdapter {
 
           try {
             const chunk = JSON.parse(data) as OpenAIStreamChunk;
+
+            // Usage arrives (with stream_options.include_usage) on a final
+            // chunk whose `choices` array is empty — handle it BEFORE the
+            // empty-choices guard below, or token accounting is lost.
+            if (chunk.usage) {
+              yield {
+                type: 'usage',
+                usage: {
+                  inputTokens: chunk.usage.prompt_tokens,
+                  outputTokens: chunk.usage.completion_tokens,
+                  totalTokens: chunk.usage.total_tokens,
+                },
+              };
+            }
+
             const choice = chunk.choices[0];
 
             if (!choice) continue;
@@ -449,24 +467,15 @@ export class OpenAIAdapter implements ProviderAdapter {
                 };
               }
             }
-
-            // Handle usage (final chunk)
-            if (chunk.usage) {
-              yield {
-                type: 'usage',
-                usage: {
-                  inputTokens: chunk.usage.prompt_tokens,
-                  outputTokens: chunk.usage.completion_tokens,
-                  totalTokens: chunk.usage.total_tokens,
-                },
-              };
-            }
           } catch {
             // Skip invalid JSON
           }
         }
       }
     } finally {
+      // cancel() aborts the underlying HTTP stream so the provider stops
+      // generating (and billing) when the consumer stops early.
+      await reader.cancel().catch(() => {});
       reader.releaseLock();
     }
   }
@@ -485,7 +494,7 @@ export class OpenAIAdapter implements ProviderAdapter {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.error?.message || `OpenAI API error: ${response.statusText}`);
+      throw mapHttpError(response.status, error.error?.message || response.statusText, response.headers);
     }
 
     const data = await response.json() as {
@@ -512,8 +521,14 @@ export class OpenAIAdapter implements ProviderAdapter {
   private buildRequestBody(request: NormalizedRequest): Record<string, unknown> {
     const messages = this.convertMessages(request.messages, request.systemPrompt);
 
+    // Strip the registry prefix (e.g. "openai/gpt-4o" -> "gpt-4o"); the wire
+    // API 404s on a namespaced id.
+    const model = request.model.startsWith('openai/')
+      ? request.model.slice(7)
+      : request.model;
+
     const body: Record<string, unknown> = {
-      model: request.model,
+      model,
       messages,
     };
 
@@ -522,7 +537,9 @@ export class OpenAIAdapter implements ProviderAdapter {
     }
 
     if (request.maxTokens !== undefined) {
-      body.max_tokens = request.maxTokens;
+      // OpenAI deprecated `max_tokens` on chat completions in favor of
+      // `max_completion_tokens`; reasoning models reject the old field.
+      body.max_completion_tokens = request.maxTokens;
     }
 
     if (request.stopSequences?.length) {

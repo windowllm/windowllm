@@ -4,13 +4,14 @@
  * LLM provider adapters for WindowLLM
  */
 
-import type {
-  Message,
-  TokenUsage,
-  ToolDefinition,
-  ModelCapabilities,
-  ModelLimits,
-  LLMModel,
+import {
+  LLMError,
+  type Message,
+  type TokenUsage,
+  type ToolDefinition,
+  type ModelCapabilities,
+  type ModelLimits,
+  type LLMModel,
 } from '@windowllm/types';
 
 /**
@@ -25,6 +26,38 @@ export interface NormalizedRequest {
   maxTokens?: number;
   stopSequences?: string[];
   stream?: boolean;
+  /** Abort signal to cancel the in-flight request. */
+  signal?: AbortSignal;
+}
+
+/**
+ * Map a non-OK HTTP response to a typed LLMError so callers can distinguish
+ * auth failures, rate limits, and retryable provider errors, and honor
+ * Retry-After. `message` is a best-effort human string from the provider body.
+ */
+export function mapHttpError(status: number, message: string, headers?: Headers): LLMError {
+  const retryAfterHeader = headers?.get('retry-after');
+  const retryAfter = retryAfterHeader ? Number(retryAfterHeader) * 1000 : undefined;
+
+  switch (status) {
+    case 400:
+      return new LLMError(message || 'Invalid request', 'INVALID_INPUT');
+    case 401:
+    case 403:
+      return new LLMError(message || 'Authentication failed', 'PROVIDER_ERROR');
+    case 404:
+      return new LLMError(message || 'Not found', 'MODEL_NOT_FOUND');
+    case 413:
+      return new LLMError(message || 'Request too large', 'CONTEXT_TOO_LONG');
+    case 429:
+      return new LLMError(message || 'Rate limit exceeded', 'RATE_LIMITED', { retryAfter });
+    default:
+      if (status >= 500) {
+        // 500/502/503/529 — transient upstream failures, retryable.
+        return new LLMError(message || 'Provider error', 'PROVIDER_ERROR', { retryAfter });
+      }
+      return new LLMError(message || `HTTP ${status}`, 'UNKNOWN');
+  }
 }
 
 /**
