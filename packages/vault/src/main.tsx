@@ -489,6 +489,9 @@ function PermissionsTab() {
   const handleRevoke = async (origin: string) => {
     if (confirm(`Revoke permissions for ${origin}?`)) {
       await api.permissions.revoke(origin);
+      // Terminate any live sessions for this origin so a site can't keep
+      // completing requests against a permission the user just revoked.
+      getHandler()?.invalidateSessionsForOrigin(origin);
       await loadPermissions();
     }
   };

@@ -307,19 +307,17 @@ export class VaultHandler {
    * Returns null if session not found or origin doesn't match
    */
   private getSession(sessionToken: string, origin: string): ActiveSession | null {
-    // Session tokens are stored with session ID as key
-    // Find session by iterating (in production, use a token->session map)
-    for (const session of this.sessions.values()) {
-      if (session.id === sessionToken || session.origin === origin) {
-        if (session.origin !== origin) {
-          // Origin mismatch - potential session hijacking attempt
-          return null;
-        }
-        session.lastActivity = Date.now();
-        return session;
-      }
+    // Look the session up by its token, then verify the request origin matches
+    // the origin that created it. Using `||` here (as this once did) made the
+    // token inert — any live session for the origin would be returned.
+    const session = this.sessions.get(sessionToken);
+    if (!session) return null;
+    if (session.origin !== origin) {
+      // Origin mismatch — potential session hijacking attempt.
+      return null;
     }
-    return null;
+    session.lastActivity = Date.now();
+    return session;
   }
 
   /**
@@ -532,6 +530,10 @@ export class VaultHandler {
       return;
     }
 
+    // Record at admission (before awaiting the provider), so a burst of
+    // concurrent requests can't all pass the check before any is counted.
+    this.recordRequest(origin);
+
     // Get model first to determine which adapter to use
     let model = request.payload.options?.model;
 
@@ -717,8 +719,7 @@ export class VaultHandler {
         );
       }
     }
-
-    this.recordRequest(origin);
+    // Note: the request was already counted at admission (see handleCompletion).
   }
 
   private async handleModelsList(
