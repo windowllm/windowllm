@@ -69,7 +69,7 @@ beforeAll(async () => {
   };
   (globalThis as any).chrome = chromeMock;
 
-  await import('./background.ts');
+  await import('./background.js');
   expect(messageListener).toBeTypeOf('function');
 });
 

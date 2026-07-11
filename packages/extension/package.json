@@ -8,18 +8,19 @@
     "build:with-ui": "vite build && cp -r ../vault/dist/assets dist/ && cp ../vault/dist/extension-popup.html dist/popup.html && cp ../vault/dist/extension-options.html dist/options.html && sed -i '' 's|/assets/|assets/|g' dist/popup.html dist/options.html",
     "build:chrome": "npm run build:with-ui",
     "build:firefox": "npm run build:with-ui",
-    "build:safari": "npm run build:with-ui && cp manifest.json dist/ && cp -r icons dist/ && xcrun safari-web-extension-converter dist --app-name WindowLLM --bundle-identifier org.windowllm.WindowLLM --swift --macos-only --no-prompt --no-open --force --project-location safari-project && xcodebuild -project safari-project/WindowLLM/WindowLLM.xcodeproj -scheme WindowLLM -configuration Release build CONFIGURATION_BUILD_DIR=../build",
+    "build:safari": "npm run build:with-ui && cp manifest.safari.json dist/manifest.json && cp -r icons dist/ && xcrun safari-web-extension-converter dist --app-name WindowLLM --bundle-identifier org.windowllm.WindowLLM --swift --macos-only --no-prompt --no-open --force --project-location safari-project && xcodebuild -project safari-project/WindowLLM/WindowLLM.xcodeproj -scheme WindowLLM -configuration Release build CONFIGURATION_BUILD_DIR=../build",
     "dev": "vite build --watch",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
-    "@windowllm/types": "*",
+    "@windowllm/adapters": "*",
     "@windowllm/protocol": "*",
-    "@windowllm/adapters": "*"
+    "@windowllm/types": "*"
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.71.2",
+    "@types/chrome": "^0.2.2",
     "openai": "^6.15.0",
     "typescript": "^5.9.3",
     "vite": "^7.3.0",

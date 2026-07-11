@@ -17,12 +17,6 @@
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*"],
-      "js": ["inject.js"],
-      "run_at": "document_start",
-      "world": "MAIN"
-    },
-    {
-      "matches": ["http://*/*", "https://*/*"],
       "js": ["content.js"],
       "run_at": "document_start"
     }
@@ -34,7 +28,8 @@
     }
   ],
   "background": {
-    "service_worker": "background.js"
+    "scripts": ["background.js"],
+    "persistent": false
   },
   "action": {
     "default_popup": "popup.html",

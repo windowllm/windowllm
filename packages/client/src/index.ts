@@ -29,11 +29,11 @@ import type {
   ToolDefinition,
   ModelCapabilities,
   ModelRequirements,
+  CapabilityName,
+  CapabilityInfo,
 } from '@windowllm/types';
 
 import {
-  PROTOCOL_VERSION,
-  PROTOCOL_IDENTIFIER,
   createClientMessage,
   isVaultMessage,
   type MessageId,
@@ -73,7 +73,6 @@ class WindowLLMClient implements WindowLLM {
   readonly provider: 'extension' | 'iframe' | 'native' = 'iframe';
 
   private iframe: HTMLIFrameElement | null = null;
-  private ready = false;
   private readyPromise: Promise<void>;
   private readyResolve!: () => void;
   private readyReject!: (error: Error) => void;
@@ -577,7 +576,6 @@ class WindowLLMClient implements WindowLLM {
         this.sessionToken = handshake.payload.sessionToken;
         this.grantedCapabilities = handshake.payload.grantedCapabilities || [];
         this._available = true;
-        this.ready = true;
         this.readyResolve();
       } else {
         throw new Error(handshake.payload.error?.message || 'Handshake failed');
@@ -636,7 +634,7 @@ class WindowLLMClient implements WindowLLM {
       throw new Error('Vault not connected');
     }
 
-    const message = createClientMessage(type as 'handshake', payload as Record<string, never>);
+    const message = createClientMessage(type as 'handshake', payload as never);
 
     const response = await new Promise<T>((resolve, reject) => {
       let timeoutId: ReturnType<typeof setTimeout>;
@@ -757,7 +755,7 @@ class ClientSession implements LLMSession {
       }
       if (!this._model && models.length > 0) {
         // Use the first available model as default
-        this._model = models[0];
+        this._model = models[0] ?? null;
       }
     } catch (error) {
       console.warn('WindowLLM: Failed to fetch model info', error);
@@ -779,6 +777,9 @@ class ClientSession implements LLMSession {
           embeddings: false,
           jsonMode: false,
           systemPrompt: true,
+          multiTurn: true,
+          audioInput: false,
+          audioOutput: false,
         },
         limits: {
           contextWindow: 4096,
@@ -877,6 +878,7 @@ class ClientSession implements LLMSession {
     while (true) {
       if (chunkIndex < chunks.length) {
         const chunk = chunks[chunkIndex++];
+        if (!chunk) continue;
         accumulated += chunk.content;
 
         if (chunk.done) {
@@ -890,13 +892,16 @@ class ClientSession implements LLMSession {
             // Ignore errors on final response
           }
 
+          const result: CompletionResult = finalResult || {
+            message: { role: 'assistant', content: accumulated },
+            usage: chunk.usage || { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+            finishReason: (chunk.finishReason as CompletionResult['finishReason']) || 'complete',
+          };
+
           yield {
             type: 'done',
-            result: finalResult || {
-              message: { role: 'assistant', content: accumulated },
-              usage: chunk.usage || { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
-              finishReason: (chunk.finishReason as CompletionResult['finishReason']) || 'complete',
-            },
+            result,
+            finishReason: result.finishReason,
           };
           break;
         }
@@ -994,6 +999,7 @@ class ClientEmbeddingSession implements EmbeddingSession {
 
   async embed(text: string): Promise<EmbeddingResult> {
     const results = await this.embedBatch([text]);
+    if (!results[0]) throw new Error('Embedding returned no result');
     return results[0];
   }
 
@@ -1013,7 +1019,7 @@ class ClientEmbeddingSession implements EmbeddingSession {
     return response.payload.embeddings.map((e, i) => ({
       vector: new Float32Array(e.vector),
       inputTokens: e.inputTokens,
-      text: texts[i],
+      text: texts[i] ?? '',
     }));
   }
 
@@ -1052,7 +1058,7 @@ class ClientPermissions implements LLMPermissions {
     return this.query(descriptor);
   }
 
-  async revoke(descriptor: LLMPermissionDescriptor): Promise<LLMPermissionStatus> {
+  async revoke(_descriptor: LLMPermissionDescriptor): Promise<LLMPermissionStatus> {
     // TODO: Implement revocation
     return new ClientPermissionStatus('prompt');
   }
@@ -1081,8 +1087,20 @@ class ClientCapabilities implements LLMCapabilities {
     this.client = client;
   }
 
-  has(capability: keyof ModelCapabilities): boolean {
+  has(capability: CapabilityName): boolean {
     return this.client.getGrantedCapabilities().includes(capability);
+  }
+
+  get(name: CapabilityName): CapabilityInfo | undefined {
+    return this.has(name) ? { available: true } : undefined;
+  }
+
+  list(): CapabilityName[] {
+    return this.client.getGrantedCapabilities() as CapabilityName[];
+  }
+
+  supports(names: CapabilityName[]): boolean {
+    return names.every(n => this.has(n));
   }
 
   get chat(): boolean { return this.has('chat'); }

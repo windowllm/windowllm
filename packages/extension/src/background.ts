@@ -10,7 +10,8 @@
  */
 
 import { createAnthropicAdapter, createOpenAIAdapter, createOpenRouterAdapter, createOllamaAdapter } from '@windowllm/adapters';
-import type { ProviderAdapter, LLMModel } from '@windowllm/types';
+import type { ProviderAdapter, NormalizedRequest } from '@windowllm/adapters';
+import type { LLMModel, Message } from '@windowllm/types';
 
 const STORAGE_PREFIX = 'windowllm:';
 const PROVIDERS_KEY = `${STORAGE_PREFIX}providers`;
@@ -53,7 +54,7 @@ interface SitePermission {
  * Get all stored permissions
  */
 async function getPermissions(): Promise<SitePermission[]> {
-  const result = await chrome.storage.local.get(PERMISSIONS_KEY);
+  const result = await chrome.storage.local.get(PERMISSIONS_KEY) as Record<string, string | undefined>;
   const data = result[PERMISSIONS_KEY];
   if (!data) return [];
   try {
@@ -114,7 +115,7 @@ async function revokePermission(origin: string): Promise<void> {
  * Check if require approval is enabled (default: true)
  */
 async function getRequireApproval(): Promise<boolean> {
-  const result = await chrome.storage.local.get(SETTINGS_KEY);
+  const result = await chrome.storage.local.get(SETTINGS_KEY) as Record<string, string | undefined>;
   const data = result[SETTINGS_KEY];
   if (!data) return true;
   try {
@@ -248,7 +249,7 @@ setInterval(checkAutoLock, 60 * 1000);
  * Used when secure passphrase-based encryption isn't set up.
  */
 async function getEncryptionKey(): Promise<string | null> {
-  const result = await chrome.storage.local.get(ENCRYPTION_KEY_KEY);
+  const result = await chrome.storage.local.get(ENCRYPTION_KEY_KEY) as Record<string, string | undefined>;
   return result[ENCRYPTION_KEY_KEY] || null;
 }
 
@@ -339,7 +340,7 @@ let cachedModels: LLMModel[] | null = null;
  * Load providers from storage and decrypt API keys
  */
 async function loadProviders(): Promise<StoredProviderConfig[]> {
-  const result = await chrome.storage.local.get(PROVIDERS_KEY);
+  const result = await chrome.storage.local.get(PROVIDERS_KEY) as Record<string, string | undefined>;
   const providersJson = result[PROVIDERS_KEY];
   if (!providersJson) {
     return [];
@@ -471,17 +472,14 @@ async function handleSessionInit(
     throw new Error('No models available. Please configure a provider in the extension settings.');
   }
 
-  let model: LLMModel;
+  // models is non-empty here (guarded above), so models[0] is defined.
+  let model: LLMModel = models[0]!;
 
   if (payload.options?.model) {
     const found = models.find(m => m.id === payload.options!.model);
     if (found) {
       model = found;
-    } else {
-      model = models[0];
     }
-  } else {
-    model = models[0];
   }
 
   const adapter = getAdapterForModel(model.id);
@@ -529,9 +527,9 @@ async function handleCompletion(
   const firstSlash = modelId.indexOf('/');
   const actualModelId = firstSlash > 0 ? modelId.substring(firstSlash + 1) : modelId;
 
-  const request = {
+  const request: NormalizedRequest = {
     model: actualModelId,
-    messages: payload.messages,
+    messages: payload.messages as Message[],
     systemPrompt: session.systemPrompt,
     stream: payload.stream,
   };
@@ -561,7 +559,11 @@ async function handleCompletion(
           }, sendOptions);
         }
       } else if (chunk.type === 'usage' && chunk.usage) {
-        usage = chunk.usage;
+        usage = {
+          inputTokens: chunk.usage.inputTokens ?? 0,
+          outputTokens: chunk.usage.outputTokens ?? 0,
+          totalTokens: chunk.usage.totalTokens ?? 0,
+        };
       }
       // 'done' chunk from adapter is ignored - we send our own below
     }
@@ -631,7 +633,7 @@ function isExtensionPageSender(sender: chrome.runtime.MessageSender): boolean {
 
 /** Read the current pending popup request, if any. */
 async function readPendingPopup(): Promise<PendingPopupRequest | null> {
-  const json = (await chrome.storage.local.get(PENDING_POPUP_KEY))[PENDING_POPUP_KEY];
+  const json = (await chrome.storage.local.get(PENDING_POPUP_KEY) as Record<string, string | undefined>)[PENDING_POPUP_KEY];
   if (!json) return null;
   try {
     return JSON.parse(json) as PendingPopupRequest;
@@ -801,7 +803,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         case 'popup_result':
           // Handle result from popup and notify the originating tab
           try {
-            const pendingJson = (await chrome.storage.local.get(PENDING_POPUP_KEY))[PENDING_POPUP_KEY];
+            const pendingJson = (await chrome.storage.local.get(PENDING_POPUP_KEY) as Record<string, string | undefined>)[PENDING_POPUP_KEY];
             if (!pendingJson) {
               return { error: 'No pending popup request' };
             }
@@ -830,7 +832,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         case 'get_pending_popup':
           // Get pending popup request (called by popup on load)
           try {
-            const pendingJson = (await chrome.storage.local.get(PENDING_POPUP_KEY))[PENDING_POPUP_KEY];
+            const pendingJson = (await chrome.storage.local.get(PENDING_POPUP_KEY) as Record<string, string | undefined>)[PENDING_POPUP_KEY];
             if (!pendingJson) {
               return { pending: null };
             }

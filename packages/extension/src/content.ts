@@ -2,22 +2,28 @@
  * WindowLLM Extension - Content Script
  *
  * Runs in the ISOLATED world. Responsibilities:
- * 1. Inject inject.js into the page's MAIN world
- * 2. Bridge messages between inject.js and background.js
+ * 1. Bridge messages between inject.js (MAIN world) and background.js
  *
- * This approach works across Chrome, Firefox, and Safari.
+ * Note: inject.js is loaded directly into MAIN world via manifest.json
+ * using "world": "MAIN" for Chrome, with fallback injection for Firefox/Safari.
  */
 
-// Inject the script into the page's MAIN world
-function injectScript() {
+// Firefox/Safari expose a `browser` global; it isn't in @types/chrome.
+declare const browser: unknown;
+
+// Fallback injection for browsers that don't support "world": "MAIN"
+// Chrome 102+ supports it via manifest, Firefox and Safari need manual injection
+// Note: Chrome UA includes "Safari", so we must explicitly exclude Chrome
+const isChrome = navigator.userAgent.includes('Chrome');
+const isFirefox = typeof browser !== 'undefined';
+const isSafari = navigator.userAgent.includes('Safari') && !isChrome;
+
+if (isFirefox || isSafari) {
   const script = document.createElement('script');
   script.src = chrome.runtime.getURL('inject.js');
   script.onload = () => script.remove();
   (document.head || document.documentElement).appendChild(script);
 }
-
-// Inject as early as possible
-injectScript();
 
 // Listen for requests from inject.js (MAIN world)
 window.addEventListener('windowllm:request', (async (event: CustomEvent) => {
@@ -64,10 +70,10 @@ window.addEventListener('windowllm:request', (async (event: CustomEvent) => {
       }
     }));
   }
-}) as EventListener);
+}) as unknown as EventListener);
 
 // Handle messages from background
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message) => {
   if (message.type === 'stream_chunk') {
     // Forward stream chunk to inject.js
     window.dispatchEvent(new CustomEvent('windowllm:stream', {
