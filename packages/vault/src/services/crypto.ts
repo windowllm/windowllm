@@ -493,7 +493,7 @@ export class VaultEncryption {
   static isEncryptedFormat(data: string): boolean {
     try {
       const parsed = JSON.parse(data);
-      return parsed.version === 1 && parsed.iv && parsed.ciphertext;
+      return parsed.version === 1 && !!parsed.iv && !!parsed.ciphertext;
     } catch {
       return false;
     }

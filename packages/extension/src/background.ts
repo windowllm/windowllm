@@ -270,6 +270,45 @@ function decryptApiKey(encrypted: string, key: string): string {
   }
 }
 
+/** True if the stored value is AES-GCM ciphertext (vs legacy XOR base64). */
+function isEncryptedFormat(data: string): boolean {
+  try {
+    const parsed = JSON.parse(data);
+    return parsed.version === 1 && !!parsed.iv && !!parsed.ciphertext;
+  } catch {
+    return false;
+  }
+}
+
+/** Retrieve the passphrase-derived master CryptoKey persisted by the vault UI. */
+async function getMasterKey(): Promise<CryptoKey | null> {
+  try {
+    const db = await openVaultDatabase();
+    return await new Promise((resolve) => {
+      const tx = db.transaction(KEY_STORE, 'readonly');
+      const request = tx.objectStore(KEY_STORE).get('masterKey');
+      request.onerror = () => resolve(null);
+      request.onsuccess = () => resolve((request.result as CryptoKey) || null);
+      tx.oncomplete = () => db.close();
+    });
+  } catch {
+    return null;
+  }
+}
+
+/** Decrypt an AES-256-GCM key blob produced by VaultEncryption in crypto.ts. */
+async function decryptApiKeyAES(encryptedJson: string, key: CryptoKey): Promise<string | null> {
+  try {
+    const data = JSON.parse(encryptedJson) as { iv: string; ciphertext: string };
+    const iv = Uint8Array.from(atob(data.iv), c => c.charCodeAt(0));
+    const ciphertext = Uint8Array.from(atob(data.ciphertext), c => c.charCodeAt(0));
+    const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
+    return new TextDecoder().decode(plaintext);
+  } catch {
+    return null;
+  }
+}
+
 interface StoredProviderConfig {
   id: string;
   type: 'openai' | 'anthropic' | 'ollama' | 'openrouter' | 'custom';
@@ -309,15 +348,21 @@ async function loadProviders(): Promise<StoredProviderConfig[]> {
   try {
     const providers = JSON.parse(providersJson) as StoredProviderConfig[];
     const encryptionKey = await getEncryptionKey();
+    // Only fetched if we actually encounter an AES-encrypted key.
+    let masterKey: CryptoKey | null | undefined;
 
-    if (!encryptionKey) {
-      return providers;
-    }
+    return await Promise.all(providers.map(async p => {
+      if (!p.apiKey) return { ...p, apiKey: undefined };
 
-    // Decrypt API keys
-    return providers.map(p => ({
-      ...p,
-      apiKey: p.apiKey ? decryptApiKey(p.apiKey, encryptionKey) : undefined,
+      // AES-256-GCM keys (passphrase mode) require the unlocked master key.
+      if (isEncryptedFormat(p.apiKey)) {
+        if (masterKey === undefined) masterKey = await getMasterKey();
+        const decrypted = masterKey ? await decryptApiKeyAES(p.apiKey, masterKey) : null;
+        return { ...p, apiKey: decrypted ?? undefined };
+      }
+
+      // Legacy XOR obfuscation.
+      return { ...p, apiKey: encryptionKey ? decryptApiKey(p.apiKey, encryptionKey) : p.apiKey };
     }));
   } catch (error) {
     console.error('[WindowLLM] Failed to parse providers:', error);

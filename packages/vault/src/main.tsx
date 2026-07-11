@@ -10,7 +10,7 @@ import { Settings, Shield, Key, Plus, ExternalLink, Check, X, Loader2, AlertTria
 
 import './globals.css';
 
-import { getVaultEncryption, type StoredProviderConfig, type SitePermission, type VaultSettings } from './services/storage.js';
+import { getVaultEncryption, getVaultStorage, type StoredProviderConfig, type SitePermission, type VaultSettings } from './services/storage.js';
 import { getHandler, initializeHandler } from './services/handler.js';
 import { getVaultAPI, type VaultAPI } from './services/api.js';
 
@@ -143,8 +143,9 @@ function App({ onLock }: { onLock?: () => void }) {
                 <CardHeader>
                   <CardTitle className="text-blue-400">Welcome to WindowLLM!</CardTitle>
                   <CardDescription>
-                    Add a provider below to start using AI on any website. Your API keys are encrypted
-                    and stored locally in your browser - they never leave your device.
+                    Add a provider below to start using AI on any website. Your API keys are stored
+                    locally in your browser and never leave your device. Set a passphrase to encrypt
+                    them at rest with AES-256.
                   </CardDescription>
                 </CardHeader>
               </Card>
@@ -677,6 +678,8 @@ function UnlockPopup({ returnTo }: { returnTo: string }) {
       }
 
       if (success) {
+        // Upgrade any legacy-obfuscated keys to AES now that we're unlocked.
+        await getVaultStorage().migrateProvidersToEncryption();
         // Notify the opener window that vault is unlocked
         if (window.opener) {
           window.opener.postMessage({ type: 'vault_unlocked' }, returnTo);
@@ -811,6 +814,8 @@ function VaultApp() {
       }
 
       if (success) {
+        // Upgrade any legacy-obfuscated keys to AES now that we're unlocked.
+        await getVaultStorage().migrateProvidersToEncryption();
         setIsUnlocked(true);
         // Refresh the handler to use decrypted keys
         getHandler()?.refreshAdapters();

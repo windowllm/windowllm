@@ -267,12 +267,26 @@ export class VaultAPI {
 
   private createEncryptionAPI(): EncryptionAPI {
     const encryption = this.encryption;
+    const storage = this.storage;
+
+    // After a successful unlock/setup, upgrade any legacy XOR-obfuscated keys
+    // to AES-256-GCM so the vault's "encrypted at rest" guarantee is real.
+    const migrate = async (ok: boolean): Promise<boolean> => {
+      if (ok) {
+        try {
+          await storage.migrateProvidersToEncryption();
+        } catch {
+          // migration is best-effort; unlock still succeeded
+        }
+      }
+      return ok;
+    };
 
     return {
       isSetUp: () => encryption.isSetUp(),
       isLocked: () => encryption.locked,
-      setup: (passphrase: string) => encryption.setup(passphrase),
-      unlock: (passphrase: string) => encryption.unlock(passphrase),
+      setup: (passphrase: string) => encryption.setup(passphrase).then(migrate),
+      unlock: (passphrase: string) => encryption.unlock(passphrase).then(migrate),
       lock: () => encryption.lock(),
       getRemainingLockTime: () => encryption.getRemainingLockTime(),
     };

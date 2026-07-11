@@ -7,6 +7,7 @@
 
 import type { ModelCapabilities } from '@windowllm/types';
 import { getStorageAdapter, type StorageAdapter } from './storage-adapter.js';
+import { VaultEncryption, getVaultEncryption } from './crypto.js';
 
 const STORAGE_PREFIX = 'windowllm:';
 const PROVIDERS_KEY = `${STORAGE_PREFIX}providers`;
@@ -135,10 +136,85 @@ class SimpleObfuscation {
 export class VaultStorage {
   private storage: StorageAdapter;
   private obfuscation: SimpleObfuscation;
+  private encryption: VaultEncryption;
 
-  constructor(storage?: StorageAdapter) {
+  constructor(storage?: StorageAdapter, encryption?: VaultEncryption) {
     this.storage = storage ?? getStorageAdapter();
     this.obfuscation = new SimpleObfuscation(this.storage);
+    this.encryption = encryption ?? getVaultEncryption(this.storage);
+  }
+
+  // =========================================================================
+  // API key encryption
+  //
+  // When a passphrase is set up and the vault is unlocked, API keys are
+  // encrypted at rest with AES-256-GCM (VaultEncryption). Otherwise they fall
+  // back to legacy XOR obfuscation — better than plaintext against a casual
+  // profile scan, but NOT cryptographically secure. On read we detect the
+  // format per key, so both live side by side during migration.
+  // =========================================================================
+
+  private async encryptKey(plain: string): Promise<string> {
+    if (!this.encryption.locked) {
+      try {
+        return await this.encryption.encrypt(plain);
+      } catch {
+        // fall through to obfuscation if AES encryption fails
+      }
+    }
+    return this.obfuscation.encrypt(plain);
+  }
+
+  /** Decrypt a stored key. Returns undefined if an AES key can't be read (vault locked). */
+  private async decryptKey(stored: string): Promise<string | undefined> {
+    if (VaultEncryption.isEncryptedFormat(stored)) {
+      if (this.encryption.locked) return undefined;
+      try {
+        return await this.encryption.decrypt(stored);
+      } catch {
+        return undefined;
+      }
+    }
+    try {
+      return await this.obfuscation.decrypt(stored);
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** Read stored providers WITHOUT decrypting keys (for safe mutation while locked). */
+  private async getRawProviders(): Promise<StoredProviderConfig[]> {
+    const data = await this.storage.get(PROVIDERS_KEY);
+    if (!data) return [];
+    try {
+      return JSON.parse(data) as StoredProviderConfig[];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Re-encrypt any legacy XOR-obfuscated keys with AES-256-GCM. No-op while the
+   * vault is locked. Safe to call opportunistically after unlock.
+   */
+  async migrateProvidersToEncryption(): Promise<void> {
+    if (this.encryption.locked) return;
+    const raw = await this.getRawProviders();
+    let changed = false;
+    for (const p of raw) {
+      if (p.apiKey && !VaultEncryption.isEncryptedFormat(p.apiKey)) {
+        try {
+          const plain = await this.obfuscation.decrypt(p.apiKey);
+          p.apiKey = await this.encryption.encrypt(plain);
+          changed = true;
+        } catch {
+          // leave un-migratable entries as-is
+        }
+      }
+    }
+    if (changed) {
+      await this.storage.set(PROVIDERS_KEY, JSON.stringify(raw));
+    }
   }
 
   // =========================================================================
@@ -146,21 +222,13 @@ export class VaultStorage {
   // =========================================================================
 
   async getProviders(): Promise<StoredProviderConfig[]> {
-    const data = await this.storage.get(PROVIDERS_KEY);
-    if (!data) return [];
-
-    try {
-      const providers = JSON.parse(data) as StoredProviderConfig[];
-      // Decrypt API keys
-      return Promise.all(
-        providers.map(async p => ({
-          ...p,
-          apiKey: p.apiKey ? await this.obfuscation.decrypt(p.apiKey) : undefined,
-        }))
-      );
-    } catch {
-      return [];
-    }
+    const providers = await this.getRawProviders();
+    return Promise.all(
+      providers.map(async p => ({
+        ...p,
+        apiKey: p.apiKey ? await this.decryptKey(p.apiKey) : undefined,
+      }))
+    );
   }
 
   async getProvider(id: string): Promise<StoredProviderConfig | null> {
@@ -169,46 +237,32 @@ export class VaultStorage {
   }
 
   async saveProvider(config: StoredProviderConfig): Promise<void> {
-    const providers = await this.getProviders();
-    const index = providers.findIndex(p => p.id === config.id);
+    // Operate on the RAW stored list so other providers' encrypted keys are
+    // preserved byte-for-byte (never round-tripped through a locked decrypt,
+    // which would drop AES keys we can't currently read).
+    const raw = await this.getRawProviders();
+    const index = raw.findIndex(p => p.id === config.id);
 
-    // Store with plain apiKey - encryption happens below for all providers
-    const toStore = {
+    const encryptedKey = config.apiKey ? await this.encryptKey(config.apiKey) : undefined;
+    const toStore: StoredProviderConfig = {
       ...config,
+      apiKey: encryptedKey,
       updatedAt: Date.now(),
+      createdAt: index >= 0 ? raw[index]!.createdAt : Date.now(),
     };
 
     if (index >= 0) {
-      const existing = providers[index]!;
-      providers[index] = { ...toStore, createdAt: existing.createdAt };
+      raw[index] = toStore;
     } else {
-      providers.push({ ...toStore, createdAt: Date.now() });
+      raw.push(toStore);
     }
 
-    // Encrypt all API keys before storing
-    const encryptedProviders = await Promise.all(
-      providers.map(async p => ({
-        ...p,
-        apiKey: p.apiKey ? await this.obfuscation.encrypt(p.apiKey) : undefined,
-      }))
-    );
-
-    await this.storage.set(PROVIDERS_KEY, JSON.stringify(encryptedProviders));
+    await this.storage.set(PROVIDERS_KEY, JSON.stringify(raw));
   }
 
   async deleteProvider(id: string): Promise<void> {
-    const providers = await this.getProviders();
-    const filtered = providers.filter(p => p.id !== id);
-
-    // Re-encrypt before storing
-    const toStore = await Promise.all(
-      filtered.map(async p => ({
-        ...p,
-        apiKey: p.apiKey ? await this.obfuscation.encrypt(p.apiKey) : undefined,
-      }))
-    );
-
-    await this.storage.set(PROVIDERS_KEY, JSON.stringify(toStore));
+    const raw = await this.getRawProviders();
+    await this.storage.set(PROVIDERS_KEY, JSON.stringify(raw.filter(p => p.id !== id)));
   }
 
   async getEnabledProviders(): Promise<StoredProviderConfig[]> {
