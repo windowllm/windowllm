@@ -18,11 +18,17 @@ const isChrome = navigator.userAgent.includes('Chrome');
 const isFirefox = typeof browser !== 'undefined';
 const isSafari = navigator.userAgent.includes('Safari') && !isChrome;
 
+// Placeholder replaced at build time with the full inject.js source (see the
+// inline-inject step in vite.config.ts). Executing the source SYNCHRONOUSLY via
+// a textContent <script> guarantees window.llm exists before the page's own
+// document_start scripts run — an async script.src would race and lose.
+const INJECT_JS_SOURCE = '__WINDOWLLM_INJECT_SOURCE__';
+
 if (isFirefox || isSafari) {
   const script = document.createElement('script');
-  script.src = chrome.runtime.getURL('inject.js');
-  script.onload = () => script.remove();
+  script.textContent = INJECT_JS_SOURCE;
   (document.head || document.documentElement).appendChild(script);
+  script.remove();
 }
 
 // Listen for requests from inject.js (MAIN world)

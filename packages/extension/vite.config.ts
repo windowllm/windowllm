@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import { resolve } from 'path';
+import { readFileSync, writeFileSync } from 'fs';
 
 // Build background separately as IIFE since Safari service workers don't support ES modules well
 import { build } from 'vite';
@@ -63,6 +64,19 @@ export default defineConfig({
           },
         });
 
+        // Inline the built inject.js source into content.js so Firefox/Safari
+        // can execute it SYNCHRONOUSLY (see content.ts). content.ts carries the
+        // literal placeholder '__WINDOWLLM_INJECT_SOURCE__'; replace it with the
+        // JSON-encoded inject bundle. Chrome ignores this path (world:MAIN).
+        const contentPath = resolve(__dirname, 'dist/content.js');
+        const injectSource = readFileSync(resolve(__dirname, 'dist/inject.js'), 'utf8');
+        const placeholder = '__WINDOWLLM_INJECT_SOURCE__';
+        let content = readFileSync(contentPath, 'utf8');
+        // The minifier keeps the string literal; replace both quote styles.
+        content = content
+          .split(`"${placeholder}"`).join(JSON.stringify(injectSource))
+          .split(`'${placeholder}'`).join(JSON.stringify(injectSource));
+        writeFileSync(contentPath, content);
       },
     },
   ],

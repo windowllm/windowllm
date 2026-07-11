@@ -336,6 +336,57 @@ const sessions = new Map<string, Session>();
 let adapters: Map<string, ProviderAdapter> = new Map();
 let cachedModels: LLMModel[] | null = null;
 
+const SESSION_STORE_PREFIX = 'session:';
+
+/** Serializable session metadata; the adapter is rebuilt from modelId on restore. */
+interface StoredSession {
+  id: string;
+  origin: string;
+  modelId: string;
+  systemPrompt?: string;
+}
+
+/**
+ * Persist session metadata to chrome.storage.session so an MV3 service worker
+ * that suspends between requests can rebuild the session instead of failing
+ * with "Session not found". (chrome.storage.session is MV3-only; guard it.)
+ */
+async function persistSession(session: Session): Promise<void> {
+  if (!chrome.storage.session) return;
+  const stored: StoredSession = {
+    id: session.id,
+    origin: session.origin,
+    modelId: session.model.id,
+    systemPrompt: session.systemPrompt,
+  };
+  await chrome.storage.session.set({ [SESSION_STORE_PREFIX + session.id]: stored });
+}
+
+/** Rebuild an in-memory session (with a live adapter) from persisted metadata. */
+async function restoreSession(sessionId: string, origin: string): Promise<Session | null> {
+  if (!chrome.storage.session) return null;
+  const key = SESSION_STORE_PREFIX + sessionId;
+  const stored = (await chrome.storage.session.get(key))[key] as StoredSession | undefined;
+  if (!stored || stored.origin !== origin) return null;
+
+  const models = await getModels(); // ensures adapters are initialized
+  const model = models.find(m => m.id === stored.modelId) || models[0];
+  if (!model) return null;
+  const adapter = getAdapterForModel(model.id);
+  if (!adapter) return null;
+
+  const session: Session = {
+    id: stored.id,
+    origin: stored.origin,
+    model,
+    adapter,
+    messages: [],
+    systemPrompt: stored.systemPrompt,
+  };
+  sessions.set(sessionId, session);
+  return session;
+}
+
 /**
  * Load providers from storage and decrypt API keys
  */
@@ -497,6 +548,7 @@ async function handleSessionInit(
   };
 
   sessions.set(payload.sessionId, session);
+  await persistSession(session);
 
   return { model };
 }
@@ -509,7 +561,9 @@ async function handleCompletion(
   sender: chrome.runtime.MessageSender,
   origin: string
 ): Promise<unknown> {
-  const session = sessions.get(payload.sessionId);
+  // Fall back to persisted metadata if the service worker was suspended and
+  // dropped the in-memory session (restoreSession also verifies the origin).
+  const session = sessions.get(payload.sessionId) ?? await restoreSession(payload.sessionId, origin);
   if (!session) {
     throw new Error('Session not found. Please initialize a session first.');
   }
@@ -705,9 +759,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         case 'session_destroy': {
           // Only allow destroying a session owned by the requesting origin.
-          const session = sessions.get(message.payload?.sessionId);
-          if (session && session.origin === origin) {
-            sessions.delete(message.payload.sessionId);
+          const sessionId = message.payload?.sessionId;
+          if (sessionId && origin) {
+            const session = sessions.get(sessionId) ?? await restoreSession(sessionId, origin);
+            if (session && session.origin === origin) {
+              sessions.delete(sessionId);
+              if (chrome.storage.session) {
+                await chrome.storage.session.remove(SESSION_STORE_PREFIX + sessionId);
+              }
+            }
           }
           return { success: true };
         }
