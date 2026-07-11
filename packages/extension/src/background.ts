@@ -282,6 +282,7 @@ interface StoredProviderConfig {
 
 interface Session {
   id: string;
+  origin: string;
   model: LLMModel;
   adapter: ProviderAdapter;
   messages: Array<{ role: string; content: string }>;
@@ -415,7 +416,10 @@ function getAdapterForModel(modelId: string): ProviderAdapter | null {
 /**
  * Handle session initialization
  */
-async function handleSessionInit(payload: { sessionId: string; options?: { model?: string; systemPrompt?: string } }): Promise<{ model: LLMModel }> {
+async function handleSessionInit(
+  payload: { sessionId: string; options?: { model?: string; systemPrompt?: string } },
+  origin: string
+): Promise<{ model: LLMModel }> {
   const models = await getModels();
 
   if (models.length === 0) {
@@ -442,6 +446,7 @@ async function handleSessionInit(payload: { sessionId: string; options?: { model
 
   const session: Session = {
     id: payload.sessionId,
+    origin,
     model,
     adapter,
     messages: [],
@@ -458,11 +463,18 @@ async function handleSessionInit(payload: { sessionId: string; options?: { model
  */
 async function handleCompletion(
   payload: { sessionId: string; messages: Array<{ role: string; content: string }>; stream?: boolean; options?: { model?: string } },
-  sender: chrome.runtime.MessageSender
+  sender: chrome.runtime.MessageSender,
+  origin: string
 ): Promise<unknown> {
   const session = sessions.get(payload.sessionId);
   if (!session) {
     throw new Error('Session not found. Please initialize a session first.');
+  }
+
+  // A session is bound to the origin that created it. Reject cross-origin reuse
+  // of a session id (which is otherwise guessable only by the owning page).
+  if (session.origin !== origin) {
+    throw new Error('Session does not belong to this origin.');
   }
 
   // Get the model ID from options or use session model
@@ -484,12 +496,15 @@ async function handleCompletion(
     let accumulated = '';
     let usage: { inputTokens: number; outputTokens: number; totalTokens: number } | undefined;
     const tabId = sender.tab?.id;
+    // Route chunks back to the exact frame that made the request, so a sibling
+    // (e.g. a cross-origin ad iframe) in the same tab cannot observe them.
+    const sendOptions = sender.frameId != null ? { frameId: sender.frameId } : undefined;
 
     for await (const chunk of session.adapter.stream(request)) {
       if (chunk.type === 'text' && chunk.content) {
         accumulated += chunk.content;
 
-        if (tabId) {
+        if (tabId != null) {
           chrome.tabs.sendMessage(tabId, {
             type: 'stream_chunk',
             sessionId: payload.sessionId,
@@ -498,7 +513,7 @@ async function handleCompletion(
               text: chunk.content,
               accumulated,
             },
-          });
+          }, sendOptions);
         }
       } else if (chunk.type === 'usage' && chunk.usage) {
         usage = chunk.usage;
@@ -507,7 +522,7 @@ async function handleCompletion(
     }
 
     // Send done with usage
-    if (tabId) {
+    if (tabId != null) {
       chrome.tabs.sendMessage(tabId, {
         type: 'stream_chunk',
         sessionId: payload.sessionId,
@@ -515,7 +530,7 @@ async function handleCompletion(
           type: 'done',
           result: { message: { role: 'assistant', content: accumulated }, usage },
         },
-      });
+      }, sendOptions);
     }
 
     return { streaming: true };
@@ -538,18 +553,72 @@ async function handleModelsList(): Promise<{ models: LLMModel[] }> {
   return { models };
 }
 
+/**
+ * Message types that expose privileged vault operations. These must ONLY be
+ * accepted from the extension's own pages (popup / options) — never from a
+ * content script running in a web page, which forwards page-supplied messages
+ * verbatim. Without this gate any page could grant itself permission, read the
+ * provider config, or lock the vault.
+ */
+const EXTENSION_ONLY_MESSAGES = new Set([
+  'get_config',
+  'grant_permission',
+  'revoke_permission',
+  'get_permissions',
+  'lock_vault',
+  'popup_result',
+  'get_pending_popup',
+]);
+
+/** Messages that require an unlocked vault and per-origin consent. */
+const PROTECTED_MESSAGES = new Set(['session_init', 'completion', 'models_list']);
+
+/**
+ * True when a message originates from one of the extension's own pages (popup,
+ * options) rather than a content script injected into a web page. The
+ * extension pages load from `chrome-extension://<our-id>/...`, which no web
+ * page can spoof — the URL is set by the browser, not the message payload.
+ */
+function isExtensionPageSender(sender: chrome.runtime.MessageSender): boolean {
+  const extensionBase = chrome.runtime.getURL('');
+  return typeof sender.url === 'string' && sender.url.startsWith(extensionBase);
+}
+
+/** Read the current pending popup request, if any. */
+async function readPendingPopup(): Promise<PendingPopupRequest | null> {
+  const json = (await chrome.storage.local.get(PENDING_POPUP_KEY))[PENDING_POPUP_KEY];
+  if (!json) return null;
+  try {
+    return JSON.parse(json) as PendingPopupRequest;
+  } catch {
+    return null;
+  }
+}
+
 // Listen for messages from content scripts
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   const handleAsync = async () => {
     try {
-      // Extract origin from sender
+      const fromExtensionPage = isExtensionPageSender(sender);
+
+      // Reject privileged operations that do not come from our own UI pages.
+      if (EXTENSION_ONLY_MESSAGES.has(message.type) && !fromExtensionPage) {
+        console.warn('[WindowLLM] Rejected privileged message from untrusted sender:', message.type, sender.url);
+        return { error: 'Unauthorized' };
+      }
+
+      // Origin is ALWAYS the browser-verified sender origin, never a value
+      // taken from the message payload (which a page fully controls).
       const origin = sender.url ? new URL(sender.url).origin : null;
 
-      // Messages that require permission check and vault unlock
-      const protectedMessages = ['session_init', 'completion', 'models_list'];
+      if (PROTECTED_MESSAGES.has(message.type)) {
+        // Fail closed: a protected operation from a web page must carry a
+        // resolvable origin to gate consent against.
+        if (!origin) {
+          return { error: 'Unable to determine request origin' };
+        }
 
-      if (protectedMessages.includes(message.type)) {
         // Check if vault is locked
         const locked = await isVaultLocked();
         if (locked) {
@@ -557,15 +626,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
 
         // Check site permissions
-        if (origin) {
-          const requireApproval = await getRequireApproval();
-
-          if (requireApproval) {
-            const permitted = await hasPermission(origin);
-
-            if (!permitted) {
-              return { requiresConsent: true, origin };
-            }
+        const requireApproval = await getRequireApproval();
+        if (requireApproval) {
+          const permitted = await hasPermission(origin);
+          if (!permitted) {
+            return { requiresConsent: true, origin };
           }
         }
 
@@ -577,32 +642,43 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         case 'ping':
           return { type: 'pong', timestamp: Date.now() };
 
-        case 'get_config':
+        case 'get_config': {
           const result = await chrome.storage.local.get([PROVIDERS_KEY]);
           return { type: 'config', data: result };
+        }
 
         case 'session_init':
-          const sessionResult = await handleSessionInit(message.payload);
-          return sessionResult;
+          return await handleSessionInit(message.payload, origin!);
 
         case 'models_list':
-          const modelsResult = await handleModelsList();
-          return modelsResult;
+          return await handleModelsList();
 
         case 'completion':
-          const completionResult = await handleCompletion(message.payload, sender);
-          return completionResult;
+          return await handleCompletion(message.payload, sender, origin!);
 
-        case 'session_destroy':
-          sessions.delete(message.payload?.sessionId);
+        case 'session_destroy': {
+          // Only allow destroying a session owned by the requesting origin.
+          const session = sessions.get(message.payload?.sessionId);
+          if (session && session.origin === origin) {
+            sessions.delete(message.payload.sessionId);
+          }
           return { success: true };
+        }
 
-        case 'grant_permission':
-          if (message.payload?.origin) {
-            await grantPermission(message.payload.origin);
+        case 'grant_permission': {
+          // Bind the grant to the origin the user actually saw in the pending
+          // consent prompt. Fall back to an explicit payload origin only for
+          // our own UI (e.g. the legacy URL-based consent page).
+          const pending = await readPendingPopup();
+          const grantOrigin = pending?.type === 'consent' && pending.origin
+            ? pending.origin
+            : message.payload?.origin;
+          if (grantOrigin) {
+            await grantPermission(grantOrigin);
             return { success: true };
           }
           return { error: 'No origin provided' };
+        }
 
         case 'revoke_permission':
           if (message.payload?.origin) {
@@ -611,21 +687,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
           return { error: 'No origin provided' };
 
-        case 'get_permissions':
+        case 'get_permissions': {
           const permissions = await getPermissions();
           return { permissions };
+        }
 
-        case 'check_permission':
-          if (message.payload?.origin) {
-            const hasPerm = await hasPermission(message.payload.origin);
+        case 'check_permission': {
+          // A page may only ask about its OWN origin, never probe others.
+          if (origin) {
+            const hasPerm = await hasPermission(origin);
             return { hasPermission: hasPerm };
           }
-          return { error: 'No origin provided' };
+          return { error: 'Unable to determine request origin' };
+        }
 
-        case 'vault_status':
+        case 'vault_status': {
           const isSetUp = await isSecureEncryptionSetUp();
           const isLocked = await isVaultLocked();
           return { isSetUp, isLocked };
+        }
 
         case 'lock_vault':
           // Clear the master key from IndexedDB
@@ -644,9 +724,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
               return { error: 'No tab ID available' };
             }
 
+            // The consent request is bound to the browser-verified sender
+            // origin, not a value the page put in the payload.
             const pendingRequest: PendingPopupRequest = {
-              type: message.payload?.mode || 'consent',
-              origin: message.payload?.origin,
+              type: message.payload?.mode === 'unlock' ? 'unlock' : 'consent',
+              origin: origin ?? undefined,
               tabId,
               timestamp: Date.now(),
             };
