@@ -1,0 +1,61 @@
+name: Deploy site to GitHub Pages
+
+# Publishes the vault (frame.html + setup UI) and the client library (llm.js) to
+# the gh-pages branch, which GitHub Pages serves at windowllm.org. This is what
+# lets sites use WindowLLM in iframe mode with no extension.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/vault/**'
+      - 'packages/client/**'
+      - 'packages/adapters/**'
+      - 'packages/protocol/**'
+      - 'packages/types/**'
+      - '.github/workflows/deploy-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pages-deploy
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # Build in dependency order: shared packages -> client (llm.js) -> vault.
+      - run: npm run build --workspace=@windowllm/types --workspace=@windowllm/protocol --workspace=@windowllm/adapters
+      - run: npm run build --workspace=@windowllm/client
+      - run: npm run build --workspace=@windowllm/vault
+
+      - name: Assemble site
+        run: |
+          rm -rf _site && mkdir -p _site
+          cp -r packages/vault/dist/* _site/
+          cp packages/client/dist/llm.iife.js _site/llm.js
+          echo windowllm.org > _site/CNAME
+          touch _site/.nojekyll
+
+      - name: Publish to gh-pages
+        run: |
+          cd _site
+          git init -q
+          git checkout -q -b gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Deploy ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gh-pages

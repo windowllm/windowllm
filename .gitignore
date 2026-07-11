@@ -33,6 +33,11 @@ coverage/
 test-results/
 playwright-report/
 
+# Safari VM test artifacts
+scripts/safari-test/.image-hash
+scripts/safari-test/.shared/
+safari-test-results.json
+
 # Temporary files
 tmp/
 temp/
@@ -53,3 +58,6 @@ spec/*.html
 
 # Local development certificates
 .certs/
+
+# Assembled Pages site
+_site/

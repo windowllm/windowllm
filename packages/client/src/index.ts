@@ -48,7 +48,7 @@ import {
 
 // Vault URL - configurable for development
 const VAULT_URL = (globalThis as { WINDOWLLM_VAULT_URL?: string }).WINDOWLLM_VAULT_URL
-  || 'https://windowllm.org/vault/frame';
+  || 'https://windowllm.org/frame.html';
 
 // Base vault URL (for popups that need full UI)
 const VAULT_BASE_URL = VAULT_URL.replace(/\/frame(\.html)?$/, '');
