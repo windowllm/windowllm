@@ -813,6 +813,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           return { error: 'Unable to determine request origin' };
         }
 
+        case 'permission_query': {
+          // window.llm.permissions.query(name) — report whether the sender's
+          // origin has been granted the capability. Returns a boolean to match
+          // the iframe (vault) behavior. Was previously unhandled (timed out).
+          const cap = typeof message.payload === 'string'
+            ? message.payload
+            : message.payload?.name;
+          if (!origin || !cap) return false;
+          const perm = await getPermission(origin);
+          return perm?.capabilities?.includes(cap) ?? false;
+        }
+
         case 'vault_status': {
           const isSetUp = await isSecureEncryptionSetUp();
           const isLocked = await isVaultLocked();

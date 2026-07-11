@@ -118,9 +118,14 @@
   <pre id="results">Waiting for tests...</pre>
 
   <script type="module">
-    // Configure vault URL (use HTTPS in production, HTTP in local dev)
+    // Configure vault URL (use HTTPS in production, HTTP in local dev).
+    // The Safari-VM tests serve this page under a .test host, which /etc/hosts
+    // CAN redirect to the host (unlike .localhost, which macOS pins to
+    // loopback); reach the vault under the matching .test host there.
     const protocol = window.location.protocol;
-    const vaultHost = 'windowllm.localhost:3100';
+    const vaultHost = window.location.hostname.endsWith('.test')
+      ? 'windowllm.test:3100'
+      : 'windowllm.localhost:3100';
     const vaultUrl = `${protocol}//${vaultHost}`;
 
     window.WINDOWLLM_VAULT_URL = `${vaultUrl}/frame.html`;

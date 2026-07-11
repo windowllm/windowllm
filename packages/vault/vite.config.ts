@@ -69,7 +69,10 @@ export default defineConfig({
   server: {
     port: parseInt(process.env.VITE_PORT || '3000', 10),
     strictPort: true,
-    host: 'windowllm.localhost',
+    // VITE_HOST_ALL binds all interfaces so a VM (Safari tests) can reach the
+    // host via its gateway IP; otherwise host to the loopback hostname.
+    host: process.env.VITE_HOST_ALL ? true : 'windowllm.localhost',
+    allowedHosts: ['.localhost', '.test'],
     ...(hasLocalCerts && {
       https: {
         key: fs.readFileSync(resolve(certsDir, 'key.pem')),

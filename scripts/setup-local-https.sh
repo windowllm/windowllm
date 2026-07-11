@@ -92,7 +92,9 @@ cd "$CERTS_DIR"
 # Remove old certs if they exist
 rm -f key.pem cert.pem
 
-mkcert -key-file key.pem -cert-file cert.pem localhost 127.0.0.1 windowllm.localhost "*.windowllm.localhost"
+# .test hostnames are used by the Safari-VM tests (a VM can't be pointed at
+# *.localhost — macOS pins it to loopback and ignores /etc/hosts).
+mkcert -key-file key.pem -cert-file cert.pem localhost 127.0.0.1 windowllm.localhost "*.windowllm.localhost" test.localhost "*.test.localhost" windowllm.test "*.windowllm.test" page.test
 
 if [[ -f "key.pem" && -f "cert.pem" ]]; then
     echo "   ✓ Certificates generated in $CERTS_DIR"

@@ -1,0 +1,10 @@
+{
+  "name": "safari-test-harness",
+  "version": "1.0.0",
+  "description": "Test harness server for Safari VM testing",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {}
+}
