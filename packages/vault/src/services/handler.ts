@@ -727,6 +727,19 @@ export class VaultHandler {
     origin: string,
     source: Window
   ): Promise<void> {
+    // Don't reveal which providers/models are configured to origins that
+    // haven't been granted access — that's a fingerprinting/info-disclosure
+    // vector. A site must have a live session or a stored permission first.
+    const hasSession = Array.from(this.sessions.values()).some(s => s.origin === origin);
+    if (!hasSession) {
+      const permission = await getVaultStorage().getPermission(origin);
+      if (!permission) {
+        const response = createVaultResponse('models_list', request.id, { models: [] });
+        source.postMessage(response, origin);
+        return;
+      }
+    }
+
     // Check localStorage cache first
     const now = Date.now();
     try {

@@ -610,9 +610,11 @@ class WindowLLMClient implements WindowLLM {
     // Handle streaming chunks
     if (response.type === 'stream_chunk' && pending.onChunk) {
       pending.onChunk((response as StreamChunkResponse).payload);
-      if (!(response as StreamChunkResponse).payload.done) {
-        return; // Don't resolve yet, more chunks coming
-      }
+      // Do NOT resolve here, even on the terminal (done) chunk. The handler
+      // sends a separate `completion` message right after the done chunk that
+      // carries the full result (usage + toolCalls); resolving on the done
+      // chunk would drop it and lose tool calls over streaming.
+      return;
     }
 
     // Handle errors
