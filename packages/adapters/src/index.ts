@@ -190,5 +190,8 @@ export type { OllamaConfig } from './ollama.js';
 export { OpenRouterAdapter, createOpenRouterAdapter } from './openrouter.js';
 export type { OpenRouterConfig } from './openrouter.js';
 
+export { GeminiAdapter, createGeminiAdapter } from './gemini.js';
+export type { GeminiConfig } from './gemini.js';
+
 export { MockAdapter, createMockAdapter } from './mock.js';
 export type { MockAdapterConfig, MockResponse } from './mock.js';

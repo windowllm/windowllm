@@ -38,11 +38,12 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from './components/ui/tabs';
 // Check if we're in iframe mode
 const isIframe = window.self !== window.top;
 
-type ProviderType = 'openai' | 'anthropic' | 'ollama' | 'openrouter' | 'custom';
+type ProviderType = 'openai' | 'anthropic' | 'ollama' | 'openrouter' | 'gemini' | 'custom';
 
 const PROVIDER_INFO: Record<ProviderType, { name: string; description: string; icon: string }> = {
-  openai: { name: 'OpenAI', description: 'GPT-4, GPT-4o, and more', icon: '🤖' },
-  anthropic: { name: 'Anthropic', description: 'Claude 3.5, Claude 4', icon: '🧠' },
+  openai: { name: 'OpenAI', description: 'GPT models (browser-direct)', icon: '🤖' },
+  anthropic: { name: 'Anthropic', description: 'Claude models', icon: '🧠' },
+  gemini: { name: 'Google Gemini', description: 'Gemini models (browser-direct)', icon: '✨' },
   ollama: { name: 'Ollama', description: 'Local models', icon: '🦙' },
   openrouter: { name: 'OpenRouter', description: 'Multi-provider gateway', icon: '🔀' },
   custom: { name: 'Custom', description: 'OpenAI-compatible API', icon: '⚙️' },
@@ -274,13 +275,14 @@ function ProviderCard({ provider, onUpdate, onDelete, onTest }: ProviderCardProp
 
       {expanded && (
         <CardContent className="space-y-4 border-t pt-4">
-          {provider.type === 'openai' && (
+          {provider.type === 'ollama' && (
             <div className="flex gap-3 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
               <AlertTriangle className="h-5 w-5 text-yellow-500 flex-shrink-0 mt-0.5" />
               <div className="text-sm">
-                <p className="font-medium text-yellow-500">CORS Not Supported</p>
+                <p className="font-medium text-yellow-500">Local provider</p>
                 <p className="text-muted-foreground mt-1">
-                  OpenAI requires the browser extension. Consider using OpenRouter for iframe mode.
+                  Ollama runs on your machine. In iframe mode it only works if you set
+                  <code className="mx-1">OLLAMA_ORIGINS</code>; otherwise install the browser extension.
                 </p>
               </div>
             </div>

@@ -19,7 +19,7 @@ const SETTINGS_KEY = `${STORAGE_PREFIX}settings`;
  */
 export interface StoredProviderConfig {
   id: string;
-  type: 'openai' | 'anthropic' | 'ollama' | 'openrouter' | 'custom' | 'mock';
+  type: 'openai' | 'anthropic' | 'ollama' | 'openrouter' | 'gemini' | 'custom' | 'mock';
   name: string;
   enabled: boolean;
   apiKey?: string;

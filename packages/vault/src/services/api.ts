@@ -16,6 +16,7 @@ import {
   createAnthropicAdapter,
   createOllamaAdapter,
   createOpenRouterAdapter,
+  createGeminiAdapter,
 } from '@windowllm/adapters';
 import {
   VaultStorage,
@@ -212,6 +213,12 @@ export class VaultAPI {
               break;
             case 'openrouter':
               adapter = createOpenRouterAdapter({
+                apiKey: provider.apiKey,
+                baseUrl: provider.baseUrl,
+              });
+              break;
+            case 'gemini':
+              adapter = createGeminiAdapter({
                 apiKey: provider.apiKey,
                 baseUrl: provider.baseUrl,
               });

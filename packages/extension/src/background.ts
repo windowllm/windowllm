@@ -9,7 +9,7 @@
  * - Vault lock/unlock status
  */
 
-import { createAnthropicAdapter, createOpenAIAdapter, createOpenRouterAdapter, createOllamaAdapter } from '@windowllm/adapters';
+import { createAnthropicAdapter, createOpenAIAdapter, createOpenRouterAdapter, createOllamaAdapter, createGeminiAdapter } from '@windowllm/adapters';
 import type { ProviderAdapter, NormalizedRequest } from '@windowllm/adapters';
 import type { LLMModel, Message } from '@windowllm/types';
 
@@ -312,7 +312,7 @@ async function decryptApiKeyAES(encryptedJson: string, key: CryptoKey): Promise<
 
 interface StoredProviderConfig {
   id: string;
-  type: 'openai' | 'anthropic' | 'ollama' | 'openrouter' | 'custom';
+  type: 'openai' | 'anthropic' | 'ollama' | 'openrouter' | 'gemini' | 'custom';
   name: string;
   enabled: boolean;
   apiKey?: string;
@@ -450,6 +450,11 @@ async function initializeAdapters(): Promise<void> {
         case 'openrouter':
           if (provider.apiKey) {
             adapter = createOpenRouterAdapter({ apiKey: provider.apiKey });
+          }
+          break;
+        case 'gemini':
+          if (provider.apiKey) {
+            adapter = createGeminiAdapter({ apiKey: provider.apiKey, baseUrl: provider.baseUrl });
           }
           break;
         case 'ollama':

@@ -32,6 +32,7 @@ import {
   createAnthropicAdapter,
   createOllamaAdapter,
   createOpenRouterAdapter,
+  createGeminiAdapter,
   createMockAdapter,
 } from '@windowllm/adapters';
 
@@ -261,6 +262,13 @@ export class VaultHandler {
 
       case 'openrouter':
         return createOpenRouterAdapter({
+          apiKey: config.apiKey,
+          baseUrl: config.baseUrl,
+          defaultModel: config.defaultModel,
+        });
+
+      case 'gemini':
+        return createGeminiAdapter({
           apiKey: config.apiKey,
           baseUrl: config.baseUrl,
           defaultModel: config.defaultModel,

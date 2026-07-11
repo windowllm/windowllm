@@ -11,6 +11,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createAnthropicAdapter } from './anthropic.js';
 import { createOpenAIAdapter } from './openai.js';
 import { createOllamaAdapter } from './ollama.js';
+import { createGeminiAdapter } from './gemini.js';
 import type { NormalizedChunk } from './index.js';
 
 const enc = new TextEncoder();
@@ -154,5 +155,39 @@ describe('Ollama adapter', () => {
     const ol = createOllamaAdapter({});
     await ol.complete({ model: 'ollama/llama3.1:8b', messages: [{ role: 'user', content: 'x' }] });
     expect(sent.model).toBe('llama3.1:8b');
+  });
+});
+
+describe('Gemini adapter', () => {
+  it('lists models supporting generateContent and namespaces ids', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({
+      models: [
+        { name: 'models/gemini-2.0-flash', displayName: 'Gemini 2.0 Flash', inputTokenLimit: 1000000, outputTokenLimit: 8192, supportedGenerationMethods: ['generateContent'] },
+        { name: 'models/embedding-001', supportedGenerationMethods: ['embedContent'] },
+      ],
+    })) as typeof fetch;
+
+    const g = createGeminiAdapter({ apiKey: 'k' });
+    const models = await g.listModels();
+    expect(models).toHaveLength(1); // embedding-only model filtered out
+    expect(models[0]!.id).toBe('gemini/gemini-2.0-flash');
+    expect(models[0]!.limits.contextWindow).toBe(1000000);
+  });
+
+  it('strips the prefix into the model path and parses the response', async () => {
+    let url: any;
+    globalThis.fetch = vi.fn(async (u) => {
+      url = String(u);
+      return jsonResponse({
+        candidates: [{ content: { parts: [{ text: 'hi' }] }, finishReason: 'STOP' }],
+        usageMetadata: { promptTokenCount: 3, candidatesTokenCount: 2, totalTokenCount: 5 },
+      });
+    }) as typeof fetch;
+
+    const g = createGeminiAdapter({ apiKey: 'k' });
+    const res = await g.complete({ model: 'gemini/gemini-2.0-flash', messages: [{ role: 'user', content: 'x' }] });
+    expect(url).toContain('/models/gemini-2.0-flash:generateContent');
+    expect(res.message.content).toBe('hi');
+    expect(res.usage.totalTokens).toBe(5);
   });
 });
