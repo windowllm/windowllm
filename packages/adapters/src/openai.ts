@@ -261,6 +261,9 @@ const KNOWN_MODELS: Record<string, { capabilities: ModelCapabilities; limits: Mo
 export class OpenAIAdapter implements ProviderAdapter {
   readonly id: string;
   readonly name: string;
+  // As of 2026 api.openai.com sends CORS headers, so browser-direct works
+  // (undocumented; error responses may be opaque). Custom baseUrl proxies also.
+  readonly browserDirect = true;
   private config: OpenAIConfig;
   private baseUrl: string;
 

@@ -144,6 +144,7 @@ interface OpenAIStreamChunk {
 export class OpenRouterAdapter implements ProviderAdapter {
   readonly id = 'openrouter';
   readonly name = 'OpenRouter';
+  readonly browserDirect = true; // CORS-open on all endpoints
   private config: OpenRouterConfig;
   private baseUrl: string;
 

@@ -147,6 +147,7 @@ const FALLBACK_MODELS: Record<string, { name: string; capabilities: ModelCapabil
 export class AnthropicAdapter implements ProviderAdapter {
   readonly id = 'anthropic';
   readonly name = 'Anthropic';
+  readonly browserDirect = true; // anthropic-dangerous-direct-browser-access header
   private config: AnthropicConfig;
   private baseUrl: string;
   private modelsCache: LLMModel[] | null = null;

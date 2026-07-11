@@ -81,12 +81,14 @@ Site (example.com)     Vault (windowllm.org)     LLM Provider
 | Provider | Iframe Mode | Extension Mode | Notes |
 |----------|-------------|----------------|-------|
 | **Anthropic** | ✅ | ✅ | Full CORS support via `anthropic-dangerous-direct-browser-access` header |
-| **OpenRouter** | ✅ | ✅ | CORS enabled, access to OpenAI/Anthropic/open models |
-| **OpenAI** | ❌ | ✅ | No CORS support - use OpenRouter for browser access |
-| **Ollama** | ❌ | ✅ | Local, requires extension to bypass CORS |
-| **LM Studio** | ❌ | ✅ | Local, requires extension to bypass CORS |
+| **OpenRouter** | ✅ | ✅ | CORS enabled everywhere; also supports OAuth PKCE for keyless onboarding |
+| **OpenAI** | ✅ | ✅ | `api.openai.com` now sends CORS headers (as of 2026). De-facto, not contractual — error responses may be opaque in the browser |
+| **Ollama** | ⚠️ | ✅ | Local; browser-direct only if the user sets `OLLAMA_ORIGINS`, so extension is the default path |
+| **LM Studio** | ⚠️ | ✅ | Local; supports CORS via a server-settings toggle / `lms server start --cors` (off by default) |
 
-**Recommendation**: For browser-only usage without extension, use **Anthropic** directly or **OpenRouter** (which provides access to OpenAI models).
+**Recommendation**: For browser-only usage without an extension, **Anthropic**, **OpenAI**, and **OpenRouter** all work directly. Local providers (Ollama, LM Studio) work browser-direct only if the user opts their server into CORS; otherwise use the extension.
+
+Adapters expose a `browserDirect` flag so the vault can route local/no-CORS providers through the extension automatically.
 
 ## Installation Options
 
@@ -310,6 +312,117 @@ You can also run these manually:
 # In separate terminals:
 npm run dev:test-vault     # Vault at windowllm.localhost:3100
 npm run dev:test-page      # Test page at test.localhost:3101
+```
+
+### Safari Testing (macOS VM)
+
+Safari testing requires a separate infrastructure from Playwright due to Safari's storage partitioning (ITP). Tests run in a real macOS VM with the Safari extension installed.
+
+#### Prerequisites
+
+- **Apple Silicon Mac** (M1/M2/M3/M4) - required by Apple's Virtualization.framework
+- **Tart** - macOS VM manager:
+  ```bash
+  brew install cirruslabs/cli/tart
+  ```
+- **jq** (optional, for formatted output):
+  ```bash
+  brew install jq
+  ```
+
+#### How It Works
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  npm run test:safari                                         │
+│       │                                                      │
+│       ▼                                                      │
+│  1. Check if VM rebuild needed (hash comparison)             │
+│  2. Rebuild VM if source files changed                       │
+│  3. Start dev servers (vault + test page)                    │
+│  4. Boot macOS VM with Safari extension pre-installed        │
+│  5. Run tests via AppleScript automation                     │
+│  6. Report results                                           │
+└─────────────────────────────────────────────────────────────┘
+```
+
+The VM image is built from `ghcr.io/cirruslabs/macos-tahoe-base:latest` with:
+- Safari Developer menu enabled
+- "Allow Unsigned Extensions" enabled
+- WindowLLM extension installed and enabled
+- Test harness server (Node.js)
+
+#### Running Safari Tests
+
+```bash
+# Run Safari tests (first run builds VM, ~15-20 minutes)
+npm run test:safari
+
+# Force rebuild the VM image
+npm run test:safari:rebuild
+
+# Just build the VM image (without running tests)
+npm run test:safari:build
+```
+
+#### Automatic Rebuilds
+
+The VM automatically rebuilds when source files change. Change detection uses SHA hashes of:
+- `packages/vault/src/**/*.{ts,tsx,json}`
+- `packages/extension/src/**/*.{ts,tsx,json}`
+
+To force a rebuild, delete the hash file:
+```bash
+rm scripts/safari-test/.image-hash
+npm run test:safari
+```
+
+#### Test Output
+
+Results are displayed with pass/fail status:
+
+```
+═══════════════════════════════════════════════════════════
+                    TEST RESULTS
+═══════════════════════════════════════════════════════════
+✅ client:loading:window.llm
+✅ client:loading:api-methods
+✅ client:integration:permissions-query
+✅ client:integration:models-list
+❌ client:testpage:run
+   └─ Availability tests failed: availability:session
+
+═══════════════════════════════════════════════════════════
+  Total: 5 | Passed: 4 | Failed: 1
+═══════════════════════════════════════════════════════════
+```
+
+Results are also saved to `safari-test-results.json`.
+
+#### Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| "Tart is not installed" | Run `brew install cirruslabs/cli/tart` |
+| VM fails to boot | Ensure you're on Apple Silicon; Intel Macs not supported |
+| Extension not enabled | Delete VM and rebuild: `tart delete windowllm-safari-test && npm run test:safari:build` |
+| Tests timeout | Increase timeout in `scripts/safari-test/run.sh` or check VM has network access |
+| "Could not get VM IP" | VM may not have booted; try increasing sleep time in `run.sh` |
+
+#### Directory Structure
+
+```
+scripts/safari-test/
+├── build-image.sh              # Build VM with extension installed
+├── run.sh                      # Main test runner
+├── check-rebuild.sh            # Hash-based change detection
+├── enable-extension.applescript # Enable extension in Safari prefs
+├── harness/
+│   ├── server.js               # HTTP server for test orchestration
+│   ├── safari-test.applescript # Drive Safari for tests
+│   └── safari-actions.applescript # Reusable Safari interactions
+└── tests/
+    └── runner.js               # Test definitions and orchestrator
 ```
 
 ## Security Model

@@ -137,6 +137,9 @@ const MODEL_FAMILIES: Record<string, Partial<ModelCapabilities>> = {
 export class OllamaAdapter implements ProviderAdapter {
   readonly id = 'ollama';
   readonly name = 'Ollama (Local)';
+  // localhost only allows browser origins listed in OLLAMA_ORIGINS; a public
+  // vault origin is CORS-rejected, so the extension path is required by default.
+  readonly browserDirect = false;
   private baseUrl: string;
 
   constructor(config: OllamaConfig = {}) {

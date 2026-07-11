@@ -124,6 +124,7 @@ function sleep(ms: number): Promise<void> {
  */
 export class MockAdapter implements ProviderAdapter {
   readonly id = 'mock';
+  readonly browserDirect = true;
   readonly name: string;
 
   /** Recorded requests (when recordRequests is enabled) */

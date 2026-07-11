@@ -95,6 +95,14 @@ export interface ProviderAdapter {
   /** Provider display name */
   readonly name: string;
 
+  /**
+   * Whether this provider can be called directly from a browser page (the vault
+   * iframe), i.e. it sends CORS headers for cross-origin requests. When false,
+   * the provider is only reachable from the extension's background context (or a
+   * proxy) — the vault should not offer it in iframe-only mode.
+   */
+  readonly browserDirect: boolean;
+
   /** List available models */
   listModels(): Promise<LLMModel[]>;
 
