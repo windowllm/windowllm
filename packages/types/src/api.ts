@@ -68,6 +68,12 @@ export interface LLMModel {
 
   /** Model limits */
   readonly limits: ModelLimits;
+
+  /**
+   * True when this entry comes from the adapter's built-in fallback list
+   * (the provider's models endpoint was unreachable), not the live API.
+   */
+  readonly fallback?: boolean;
 }
 
 /**

@@ -403,7 +403,11 @@
 
       try {
         allModels = await window.llm.models.list();
-        status.innerHTML = `<span class="success">Loaded ${allModels.length} models</span>`;
+        const isFallback = allModels.some(m => m.fallback);
+        status.innerHTML = `<span class="success">Loaded ${allModels.length} models</span>` +
+          (isFallback
+            ? ` <span style="color:#e0a341">— showing a built-in fallback list; the provider's live model list was unreachable</span>`
+            : '');
         searchInput.disabled = false;
         filterModels(searchInput.value);
       } catch (error) {

@@ -118,10 +118,42 @@ interface OpenAIModelInfo {
   owned_by: string;
 }
 
+// Compact capability builder for the known-model table below.
+const cap = (o: Partial<ModelCapabilities> = {}): ModelCapabilities => ({
+  chat: true, streaming: true, vision: false, tools: true, embeddings: false,
+  jsonMode: true, systemPrompt: true, multiTurn: true, audioInput: false, audioOutput: false,
+  ...o,
+});
+
+// Chat/embedding filter for the live /v1/models response. Includes the GPT and
+// o-series (reasoning) families; excludes audio/image/moderation/instruct variants.
+function isChatOrEmbeddingModel(id: string): boolean {
+  if (/embedding/.test(id)) return true;
+  if (!/^(gpt-|chatgpt-|o1|o3|o4)/.test(id)) return false;
+  return !/(audio|realtime|transcribe|tts|whisper|dall-e|moderation|image|instruct)/.test(id);
+}
+
+// Hand-maintained fallback list, used ONLY when GET /v1/models is unreachable
+// (no key / offline). OpenAI has no public unauthenticated model list, so this is
+// a static snapshot; entries built from it are marked fallback:true for the UI.
+const OPENAI_FALLBACK_MODELS = [
+  'gpt-4.1', 'gpt-4.1-mini', 'gpt-4.1-nano', 'gpt-4o', 'gpt-4o-mini',
+  'o3', 'o4-mini', 'o3-mini', 'o1', 'gpt-3.5-turbo',
+];
+
 /**
- * Well-known OpenAI models with their capabilities
+ * Well-known OpenAI models with their capabilities. Ordered most-specific-first
+ * so findKnownModel()'s prefix match resolves e.g. gpt-4.1 before gpt-4.
  */
 const KNOWN_MODELS: Record<string, { capabilities: ModelCapabilities; limits: ModelLimits }> = {
+  'gpt-4.1-nano': { capabilities: cap({ vision: true }), limits: { contextWindow: 1047576, maxOutputTokens: 32768, maxImageCount: 20 } },
+  'gpt-4.1-mini': { capabilities: cap({ vision: true }), limits: { contextWindow: 1047576, maxOutputTokens: 32768, maxImageCount: 20 } },
+  'gpt-4.1': { capabilities: cap({ vision: true }), limits: { contextWindow: 1047576, maxOutputTokens: 32768, maxImageCount: 20 } },
+  'o4-mini': { capabilities: cap({ vision: true }), limits: { contextWindow: 200000, maxOutputTokens: 100000, maxImageCount: 20 } },
+  'o3-mini': { capabilities: cap(), limits: { contextWindow: 200000, maxOutputTokens: 100000 } },
+  'o3': { capabilities: cap({ vision: true }), limits: { contextWindow: 200000, maxOutputTokens: 100000, maxImageCount: 20 } },
+  'o1-mini': { capabilities: cap(), limits: { contextWindow: 128000, maxOutputTokens: 65536 } },
+  'o1': { capabilities: cap({ vision: true }), limits: { contextWindow: 200000, maxOutputTokens: 100000, maxImageCount: 20 } },
   'gpt-4o': {
     capabilities: {
       chat: true,
@@ -305,32 +337,37 @@ export class OpenAIAdapter implements ProviderAdapter {
       const models: LLMModel[] = [];
 
       for (const model of data.data) {
-        // Only include chat and embedding models
-        if (model.id.startsWith('gpt-') || model.id.includes('embedding')) {
-          const known = this.findKnownModel(model.id);
-          models.push({
-            id: `${this.id}/${model.id}`,
-            name: this.formatModelName(model.id),
-            provider: this.id,
-            capabilities: known?.capabilities || this.defaultCapabilities(model.id),
-            limits: known?.limits || this.defaultLimits(model.id),
-          });
-        }
+        if (!isChatOrEmbeddingModel(model.id)) continue;
+        const known = this.findKnownModel(model.id);
+        models.push({
+          id: `${this.id}/${model.id}`,
+          name: this.formatModelName(model.id),
+          provider: this.id,
+          capabilities: known?.capabilities || this.defaultCapabilities(model.id),
+          limits: known?.limits || this.defaultLimits(model.id),
+        });
       }
 
-      return models;
-    } catch (error) {
-      // Return known models as fallback
-      return Object.entries(KNOWN_MODELS)
-        .filter(([_, info]) => info.capabilities.chat)
-        .map(([id, info]) => ({
-          id: `${this.id}/${id}`,
-          name: this.formatModelName(id),
-          provider: this.id,
-          capabilities: info.capabilities,
-          limits: info.limits,
-        }));
+      // Some proxies hide /v1/models; if nothing usable came back, fall back.
+      return models.length > 0 ? models : this.fallbackModels();
+    } catch {
+      return this.fallbackModels();
     }
+  }
+
+  /** Static, hand-maintained list used only when /v1/models is unreachable. */
+  private fallbackModels(): LLMModel[] {
+    return OPENAI_FALLBACK_MODELS.map((id) => {
+      const known = this.findKnownModel(id);
+      return {
+        id: `${this.id}/${id}`,
+        name: this.formatModelName(id),
+        provider: this.id,
+        capabilities: known?.capabilities || this.defaultCapabilities(id),
+        limits: known?.limits || this.defaultLimits(id),
+        fallback: true,
+      };
+    });
   }
 
   async getModel(id: string): Promise<LLMModel | null> {
@@ -687,7 +724,7 @@ export class OpenAIAdapter implements ProviderAdapter {
     return {
       chat: !isEmbedding,
       streaming: !isEmbedding,
-      vision: id.includes('vision') || id.includes('4o'),
+      vision: id.includes('vision') || id.includes('4o') || /^(o3|o4)/.test(id),
       tools: !isEmbedding,
       embeddings: isEmbedding,
       jsonMode: !isEmbedding,
@@ -699,9 +736,10 @@ export class OpenAIAdapter implements ProviderAdapter {
   }
 
   private defaultLimits(_id: string): ModelLimits {
+    // Modern chat default; older/unknown models are refined by KNOWN_MODELS.
     return {
-      contextWindow: 8192,
-      maxOutputTokens: 4096,
+      contextWindow: 128000,
+      maxOutputTokens: 16384,
     };
   }
 

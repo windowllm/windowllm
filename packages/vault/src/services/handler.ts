@@ -81,9 +81,13 @@ export class VaultHandler {
   private pendingRequests = new Map<string, AbortController>();
   private static readonly MODELS_CACHE_KEY = 'windowllm:models_cache';
   private static readonly MODELS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+  // API keys can only be decrypted once the vault is unlocked (the master key is
+  // restored from IndexedDB asynchronously). Adapters are therefore built lazily
+  // via ensureAdapters() rather than eagerly, so they never cache undefined keys.
+  private adaptersUnlocked = false;
+  private adapterBuild: Promise<void> | null = null;
 
   constructor() {
-    this.initializeAdapters();
     window.addEventListener('message', this.handleMessage.bind(this));
   }
 
@@ -237,6 +241,25 @@ export class VaultHandler {
         console.warn(`Failed to initialize adapter for ${provider.id}:`, error);
       }
     }
+    // Record whether keys were decryptable when we built these adapters.
+    this.adaptersUnlocked = !getVaultEncryption().locked;
+  }
+
+  /**
+   * Ensure adapters are built with the currently-decryptable keys. They are not
+   * built while the vault is locked (keys can't be decrypted), so we (re)build
+   * once the vault is unlocked. Serialized so concurrent requests build once.
+   */
+  private async ensureAdapters(): Promise<void> {
+    const stale = this.adapters.size === 0 || (!this.adaptersUnlocked && !getVaultEncryption().locked);
+    if (!stale) return;
+    if (!this.adapterBuild) {
+      this.adapterBuild = (async () => {
+        this.adapters.clear();
+        await this.initializeAdapters();
+      })().finally(() => { this.adapterBuild = null; });
+    }
+    await this.adapterBuild;
   }
 
   private createAdapter(config: StoredProviderConfig): ProviderAdapter | null {
@@ -370,6 +393,9 @@ export class VaultHandler {
 
       // Touch activity to reset auto-lock timer
       encryption.touchActivity();
+
+      // Build adapters now that the vault is unlocked, so their keys are set.
+      await this.ensureAdapters();
     }
 
     try {
