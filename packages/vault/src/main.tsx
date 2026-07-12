@@ -1051,6 +1051,13 @@ function ConsentPopup({ origin }: { origin: string }) {
   );
 }
 
+// crypto.subtle (used to encrypt vault keys) only exists in a secure context.
+// If the page loaded over plain HTTP on a real host, upgrade to HTTPS before
+// doing anything, so key setup can't fail with a cryptic "reading 'importKey'".
+if (!window.isSecureContext && window.location.protocol === 'http:') {
+  window.location.replace(window.location.href.replace(/^http:/, 'https:'));
+}
+
 // Check URL parameters for popup modes
 const urlParams = new URLSearchParams(window.location.search);
 const returnTo = urlParams.get('returnTo');

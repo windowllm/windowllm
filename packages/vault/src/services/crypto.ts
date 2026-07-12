@@ -28,6 +28,20 @@ const DB_VERSION = 1;
 const KEY_STORE = 'keys';
 
 /**
+ * The Web Crypto SubtleCrypto interface only exists in a secure context
+ * (HTTPS or localhost). Fail with a clear, actionable message instead of a
+ * cryptic "Cannot read properties of undefined (reading 'importKey')".
+ */
+function requireSubtleCrypto(): SubtleCrypto {
+  if (typeof crypto === 'undefined' || !crypto.subtle) {
+    throw new Error(
+      'WindowLLM needs a secure (HTTPS) connection to encrypt your keys. Open this page over https://.'
+    );
+  }
+  return crypto.subtle;
+}
+
+/**
  * Encrypted data structure stored in localStorage
  */
 interface EncryptedData {
@@ -295,7 +309,7 @@ export class VaultEncryption {
     this.salt = await this.getOrCreateSalt();
 
     // Derive key from passphrase
-    const keyMaterial = await crypto.subtle.importKey(
+    const keyMaterial = await requireSubtleCrypto().importKey(
       'raw',
       new TextEncoder().encode(passphrase),
       'PBKDF2',
@@ -303,7 +317,7 @@ export class VaultEncryption {
       ['deriveKey']
     );
 
-    this.masterKey = await crypto.subtle.deriveKey(
+    this.masterKey = await requireSubtleCrypto().deriveKey(
       {
         name: 'PBKDF2',
         salt: new Uint8Array(this.salt!),
@@ -342,7 +356,7 @@ export class VaultEncryption {
     this.salt = await this.getOrCreateSalt();
 
     // Derive key from passphrase
-    const keyMaterial = await crypto.subtle.importKey(
+    const keyMaterial = await requireSubtleCrypto().importKey(
       'raw',
       new TextEncoder().encode(passphrase),
       'PBKDF2',
@@ -350,7 +364,7 @@ export class VaultEncryption {
       ['deriveKey']
     );
 
-    this.masterKey = await crypto.subtle.deriveKey(
+    this.masterKey = await requireSubtleCrypto().deriveKey(
       {
         name: 'PBKDF2',
         salt: new Uint8Array(this.salt!),
@@ -442,7 +456,7 @@ export class VaultEncryption {
     const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
     const encoded = new TextEncoder().encode(plaintext);
 
-    const ciphertext = await crypto.subtle.encrypt(
+    const ciphertext = await requireSubtleCrypto().encrypt(
       { name: 'AES-GCM', iv },
       this.masterKey,
       encoded
@@ -478,7 +492,7 @@ export class VaultEncryption {
     const iv = Uint8Array.from(atob(data.iv), c => c.charCodeAt(0));
     const ciphertext = Uint8Array.from(atob(data.ciphertext), c => c.charCodeAt(0));
 
-    const plaintext = await crypto.subtle.decrypt(
+    const plaintext = await requireSubtleCrypto().decrypt(
       { name: 'AES-GCM', iv },
       this.masterKey,
       ciphertext
