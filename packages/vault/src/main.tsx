@@ -6,7 +6,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import ReactDOM from 'react-dom/client';
-import { Settings, Shield, Key, Plus, ExternalLink, Check, X, Loader2, AlertTriangle, LogOut } from 'lucide-react';
+import { Settings, Shield, Key, Plus, ExternalLink, Check, X, Loader2, AlertTriangle, LogOut, Download, Upload } from 'lucide-react';
 
 import './globals.css';
 
@@ -35,6 +35,7 @@ import { Switch } from './components/ui/switch';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './components/ui/tabs';
 import { Landing } from './Landing';
 import { ProviderLogo } from './ProviderLogo';
+import { exportConfig, decryptConfig, applyConfig, type ImportMode } from './services/config-transfer';
 
 
 // Check if we're in iframe mode
@@ -102,7 +103,7 @@ function App({ onExit }: { onExit?: () => void }) {
         <div className="container max-w-4xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center font-bold text-xl text-white">
+              <div className="w-10 h-10 bg-gradient-to-br from-amber-400 to-amber-600 rounded-lg flex items-center justify-center font-bold text-xl text-neutral-900">
                 W
               </div>
               <div>
@@ -146,9 +147,9 @@ function App({ onExit }: { onExit?: () => void }) {
 
           <TabsContent value="providers" className="space-y-6">
             {!isConfigured && (
-              <Card className="border-blue-500/30 bg-blue-500/5">
+              <Card className="border-amber-500/30 bg-amber-500/5">
                 <CardHeader>
-                  <CardTitle className="text-blue-400">Welcome to WindowLLM!</CardTitle>
+                  <CardTitle className="text-amber-400">Welcome to WindowLLM!</CardTitle>
                   <CardDescription>
                     Add a provider below to start using AI on any website. Your API keys are stored
                     locally in your browser and never leave your device. Set a passphrase to encrypt
@@ -564,6 +565,49 @@ function SettingsTab() {
     setTimeout(() => setSaved(false), 2000);
   };
 
+  // Backup & transfer (encrypted export / import)
+  const [exportPw, setExportPw] = useState('');
+  const [exportMsg, setExportMsg] = useState<string | null>(null);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importPw, setImportPw] = useState('');
+  const [importMode, setImportMode] = useState<ImportMode>('additive');
+  const [importMsg, setImportMsg] = useState<{ text: string; error: boolean } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const handleExport = async () => {
+    setExportMsg(null);
+    try {
+      const blob = await exportConfig(exportPw);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `windowllm-vault-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setExportMsg('Downloaded. Keep it (and the password) somewhere safe.');
+    } catch (err) {
+      setExportMsg(err instanceof Error ? err.message : 'Export failed.');
+    }
+  };
+
+  const handleImport = async () => {
+    if (!importFile) return;
+    setImportMsg(null);
+    setBusy(true);
+    try {
+      const bundle = await decryptConfig(await importFile.text(), importPw);
+      const res = await applyConfig(bundle, importMode);
+      getHandler()?.refreshAdapters();
+      setImportMsg({ text: `Imported ${res.providers} provider(s) and ${res.permissions} permission(s). Reloading…`, error: false });
+      setTimeout(() => window.location.reload(), 1100);
+    } catch (err) {
+      setImportMsg({ text: err instanceof Error ? err.message : 'Import failed.', error: true });
+      setBusy(false);
+    }
+  };
+
   if (!settings) return null;
 
   return (
@@ -641,6 +685,78 @@ function SettingsTab() {
           </Button>
         </CardFooter>
       </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Backup &amp; Transfer</CardTitle>
+          <CardDescription>
+            Export your providers, settings, and permissions to an encrypted file, or import one.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {/* Export */}
+          <div className="space-y-2">
+            <Label htmlFor="export-pw">Export</Label>
+            <div className="flex gap-2">
+              <Input
+                id="export-pw"
+                type="password"
+                value={exportPw}
+                onChange={(e) => setExportPw(e.target.value)}
+                placeholder="Password to protect the file (min 8)"
+              />
+              <Button onClick={handleExport} disabled={exportPw.length < 8} className="shrink-0">
+                <Download className="mr-2 h-4 w-4" />
+                Export
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              The file is encrypted with AES-256; your API keys are never written in plaintext.
+              You&rsquo;ll need this password to import it.
+            </p>
+            {exportMsg && <p className="text-xs text-green-500">{exportMsg}</p>}
+          </div>
+
+          <div className="border-t" />
+
+          {/* Import */}
+          <div className="space-y-3">
+            <Label htmlFor="import-file">Import</Label>
+            <input
+              id="import-file"
+              type="file"
+              accept="application/json,.json"
+              onChange={(e) => setImportFile(e.target.files?.[0] ?? null)}
+              className="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-secondary file:px-3 file:py-2 file:text-sm file:font-medium file:text-secondary-foreground hover:file:bg-secondary/80"
+            />
+            <Input
+              type="password"
+              value={importPw}
+              onChange={(e) => setImportPw(e.target.value)}
+              placeholder="File password"
+            />
+            <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="radio" name="import-mode" className="accent-primary"
+                  checked={importMode === 'additive'} onChange={() => setImportMode('additive')} />
+                <span><span className="font-medium">Merge</span>: add on top of what&rsquo;s here</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="radio" name="import-mode" className="accent-primary"
+                  checked={importMode === 'fresh'} onChange={() => setImportMode('fresh')} />
+                <span><span className="font-medium">Replace</span>: clear providers first</span>
+              </label>
+            </div>
+            <Button variant="outline" onClick={handleImport} disabled={!importFile || importPw.length < 1 || busy}>
+              {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
+              Import
+            </Button>
+            {importMsg && (
+              <p className={`text-sm ${importMsg.error ? 'text-destructive' : 'text-green-500'}`}>{importMsg.text}</p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -710,7 +826,7 @@ function UnlockPopup({ returnTo }: { returnTo: string }) {
     <div className="min-h-screen bg-background flex items-center justify-center p-6">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center font-bold text-3xl text-white mx-auto mb-4">
+          <div className="w-16 h-16 bg-gradient-to-br from-amber-400 to-amber-600 rounded-2xl flex items-center justify-center font-bold text-3xl text-neutral-900 mx-auto mb-4">
             W
           </div>
           <CardTitle className="text-2xl">
@@ -869,7 +985,7 @@ function VaultApp({ onExit }: { onExit?: () => void }) {
   const vaultCard = (
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center font-bold text-3xl text-white mx-auto mb-4">
+          <div className="w-16 h-16 bg-gradient-to-br from-amber-400 to-amber-600 rounded-2xl flex items-center justify-center font-bold text-3xl text-neutral-900 mx-auto mb-4">
             W
           </div>
           <CardTitle className="text-2xl">
@@ -996,7 +1112,7 @@ function ConsentPopup({ origin }: { origin: string }) {
     <div className="min-h-screen bg-background flex items-center justify-center p-6">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center font-bold text-3xl text-white mx-auto mb-4">
+          <div className="w-16 h-16 bg-gradient-to-br from-amber-400 to-amber-600 rounded-2xl flex items-center justify-center font-bold text-3xl text-neutral-900 mx-auto mb-4">
             W
           </div>
           <CardTitle className="text-2xl">Permission Request</CardTitle>
