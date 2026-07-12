@@ -493,6 +493,15 @@ export class VaultHandler {
       return;
     }
 
+    // Heal older grants saved with a partial capability set (consent is binary,
+    // so an allowed site gets the full set). Keeps the vault UI and queries honest.
+    if (permission && permission.capabilities.length < ALL_CAPABILITIES.length) {
+      await storage.grantPermission({
+        ...permission,
+        capabilities: ALL_CAPABILITIES as typeof permission.capabilities,
+      });
+    }
+
     // Create session with bound permissions (snapshot at creation time)
     // Use the same ID for both session storage and client token
     const sessionId = crypto.randomUUID();

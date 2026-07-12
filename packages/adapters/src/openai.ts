@@ -341,7 +341,10 @@ export class OpenAIAdapter implements ProviderAdapter {
       const data = await response.json() as { data: OpenAIModelInfo[] };
       const models: LLMModel[] = [];
 
-      for (const model of data.data) {
+      // Newest first (by the API's `created` timestamp) so consumers that pick
+      // the first model default to a current one, not an old gpt-3.5-turbo.
+      const sorted = [...data.data].sort((a, b) => (b.created || 0) - (a.created || 0));
+      for (const model of sorted) {
         if (!isChatOrEmbeddingModel(model.id)) continue;
         const known = this.findKnownModel(model.id);
         models.push({
