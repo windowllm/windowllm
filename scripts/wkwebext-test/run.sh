@@ -46,7 +46,11 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 PLIST
 if [ ! -x "$BIN" ] || [ "$DIR/host.swift" -nt "$BIN" ]; then
   echo "[run] compiling host.swift…"
-  swiftc -swift-version 5 -O -o "$BIN" "$DIR/host.swift" -framework WebKit -framework AppKit
+  # WKWebExtension* requires a 15.4+ deployment target. swiftc defaults to the
+  # host OS version, which on some CI runners (macos-15) is below 15.4 and fails
+  # the availability check, so pin it explicitly. The runner OS is >= 15.4.
+  swiftc -swift-version 5 -O -target "$(uname -m)-apple-macos15.4" \
+    -o "$BIN" "$DIR/host.swift" -framework WebKit -framework AppKit
   codesign --force --sign - "$APP" 2>/dev/null || true
 fi
 
