@@ -29,9 +29,13 @@ This runs the actual `content.js` → inlined `inject.js` → `window.llm` path,
 loads the background service worker. It is the same WebExtension runtime Safari
 embeds, so it is high-fidelity for the extension's **web-facing behavior**.
 
-## What it does and does NOT cover — vs. the VM harness
+## What it does and does NOT cover — vs. the (retired) VM harness
 
-| | `wkwebext-test` (this) | `scripts/safari-test` (tart VM) |
+This tool replaced a tart-based macOS-VM Safari harness that was removed because it
+could never enable the unsigned extension, so it only ever exercised the iframe
+fallback. For the record, here is how they compared:
+
+| | `wkwebext-test` (this) | retired tart VM harness |
 |---|---|---|
 | Tests the **extension** (`window.llm`, content/inject/background) | ✅ real WebKit extension engine | ❌ only exercised the **iframe fallback** (`provider: "iframe"`) |
 | Speed | ~1s, headless | minutes; boots a macOS VM |

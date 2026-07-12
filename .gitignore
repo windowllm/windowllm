@@ -33,11 +33,6 @@ coverage/
 test-results/
 playwright-report/
 
-# Safari VM test artifacts
-scripts/safari-test/.image-hash
-scripts/safari-test/.shared/
-safari-test-results.json
-
 # WKWebExtension host-test build artifacts (compiled Swift tool + .app bundle)
 scripts/wkwebext-test/.build/
 
