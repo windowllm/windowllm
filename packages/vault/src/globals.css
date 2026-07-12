@@ -158,9 +158,11 @@ body {
   background: oklch(0 0 0 / 0.25); border-radius: 6px; padding: 0.28rem 0.6rem; text-align: center;
 }
 .wl-code { margin: 0; padding: 1.1rem 1.2rem 1.3rem; font-family: var(--wl-mono); font-size: 0.83rem; line-height: 1.75; overflow-x: auto; }
-.wl-code .k { color: var(--wl-indigo); }
-.wl-code .s { color: var(--wl-gold-ink); }
-.wl-code .c { color: var(--wl-faint); }
+.wl-code .k, .wl-snippet .k { color: var(--wl-indigo); }
+.wl-code .s, .wl-snippet .s { color: var(--wl-gold-ink); }
+.wl-code .c, .wl-snippet .c { color: var(--wl-faint); }
+.wl-snippet .t { color: oklch(0.76 0.13 16); }
+.wl-snippet .a { color: oklch(0.8 0.09 205); }
 .wl-code .out {
   display: block; margin-top: 0.7rem; padding-top: 0.7rem; border-top: 1px dashed var(--wl-line);
   color: var(--wl-ink);
@@ -202,6 +204,26 @@ body {
 .wl-step h3 { margin: 0 0 0.5rem; font-size: 1.1rem; font-weight: 650; }
 .wl-step p { margin: 0; color: var(--wl-dim); line-height: 1.6; font-size: 0.96rem; }
 .wl-step p b { color: var(--wl-ink); font-weight: 600; }
+
+/* extension — prominent panel; Safari-required point emphasized */
+.wl-ext {
+  display: grid; grid-template-columns: 0.9fr 1.1fr; gap: clamp(1.6rem, 4vw, 3rem);
+  align-items: center;
+  border: 1px solid var(--wl-line); border-radius: 18px;
+  padding: clamp(1.8rem, 4vw, 3rem);
+  background: radial-gradient(120% 100% at 0% 0%, oklch(0.84 0.135 79 / 0.08), transparent 55%), var(--wl-raise);
+}
+@media (max-width: 820px) { .wl-ext { grid-template-columns: 1fr; } }
+.wl-ext-head h2 { margin-top: 0.7rem; }
+.wl-ext-head p { color: var(--wl-dim); margin: 1rem 0 1.7rem; line-height: 1.6; font-size: 1.02rem; }
+.wl-ext-head p strong { color: var(--wl-gold-ink); font-weight: 650; }
+.wl-ext-points { display: grid; gap: 0.85rem; }
+.wl-ext-point { padding: 1rem 1.15rem; border: 1px solid var(--wl-line); border-radius: 12px; background: oklch(1 0 0 / 0.015); }
+.wl-ext-point h3 { margin: 0 0 0.35rem; font-size: 1.02rem; font-weight: 650; }
+.wl-ext-point p { margin: 0; color: var(--wl-dim); font-size: 0.93rem; line-height: 1.55; }
+.wl-ext-point p code { font-family: var(--wl-mono); font-size: 0.88em; color: var(--wl-ink); }
+.wl-ext-point.wl-ext-safari { border-color: oklch(0.84 0.135 79 / 0.45); background: oklch(0.84 0.135 79 / 0.08); }
+.wl-ext-point.wl-ext-safari h3 { color: var(--wl-gold-ink); }
 
 /* providers */
 .wl-providers { display: flex; flex-wrap: wrap; gap: 0.7rem; }

@@ -19,6 +19,16 @@ const PROVIDERS = [
 
 const GITHUB = 'https://github.com/windowllm/windowllm';
 
+// Hand-tokenized so the code block is syntax-highlighted (no highlighter dep).
+const DEV_SNIPPET_HTML = [
+  '<span class="t">&lt;script</span> <span class="a">src</span>=<span class="s">"https://windowllm.org/llm.js"</span><span class="t">&gt;&lt;/script&gt;</span>',
+  '',
+  '<span class="k">const</span> session = <span class="k">await</span> window.llm.requestSession();',
+  '<span class="k">const</span> reply = <span class="k">await</span> session.complete(',
+  '  <span class="s">"Explain WindowLLM in one line."</span>',
+  ');',
+].join('\n');
+
 export function Landing({ children }: { children?: ReactNode }) {
   return (
     <div className="wl">
@@ -29,7 +39,8 @@ export function Landing({ children }: { children?: ReactNode }) {
         </div>
         <div className="wl-nav-links">
           <a href="#how">How it works</a>
-          <a href="#providers">Providers</a>
+          <a href="#extension">Extension</a>
+          <a href="/demo/">Demo</a>
           <a href="#developers">Developers</a>
           <a href={GITHUB} target="_blank" rel="noopener noreferrer">GitHub</a>
           <a href="#setup" className="wl-nav-cta wl-btn wl-btn-gold" style={{ padding: '0.5rem 1rem' }}>Set up</a>
@@ -75,8 +86,8 @@ export function Landing({ children }: { children?: ReactNode }) {
           </div>
           <div className="wl-value">
             <span className="num">02</span>
-            <h3>Nothing to install</h3>
-            <p>It works through a sealed iframe and postMessage. The optional extension only adds local models and removes CORS limits.</p>
+            <h3>No install to start</h3>
+            <p>Chrome, Firefox, and Edge work through a sealed iframe, nothing to download. Safari and local models use the optional extension.</p>
           </div>
           <div className="wl-value">
             <span className="num">03</span>
@@ -109,6 +120,40 @@ export function Landing({ children }: { children?: ReactNode }) {
         </div>
       </section>
 
+      {/* Extension */}
+      <section id="extension" className="wl-shell wl-section" style={{ paddingTop: 0 }}>
+        <div className="wl-ext">
+          <div className="wl-ext-head">
+            <span className="wl-eyebrow">Browser extension</span>
+            <h2 className="wl-h2">Go further with the <em>extension</em>.</h2>
+            <p>
+              Everything above works with no install. The optional extension adds local models and
+              lifts CORS limits, and on <strong>Safari it is required</strong>.
+            </p>
+            <a className="wl-btn wl-btn-gold" href={GITHUB} target="_blank" rel="noopener noreferrer">
+              Get the extension
+            </a>
+          </div>
+          <div className="wl-ext-points">
+            <div className="wl-ext-point">
+              <h3>Local models</h3>
+              <p>Run Ollama and LM Studio from any site, with no per-origin CORS setup.</p>
+            </div>
+            <div className="wl-ext-point">
+              <h3>No CORS limits</h3>
+              <p>Reach providers that don&rsquo;t send CORS headers, straight from the page.</p>
+            </div>
+            <div className="wl-ext-point wl-ext-safari">
+              <h3>Required on Safari</h3>
+              <p>
+                Safari partitions storage, so the vault iframe can&rsquo;t hold your keys there.
+                The extension injects <code>window.llm</code> directly instead.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Providers */}
       <section id="providers" className="wl-shell wl-section" style={{ paddingTop: 0 }}>
         <div className="wl-section-head">
@@ -135,12 +180,7 @@ export function Landing({ children }: { children?: ReactNode }) {
           </div>
           <div className="wl-snippet">
             <div className="wl-snippet-head">your site</div>
-            <pre>{`<script src="https://windowllm.org/llm.js"></script>
-
-const session = await window.llm.requestSession();
-const reply = await session.complete(
-  "Explain WindowLLM in one line."
-);`}</pre>
+            <pre dangerouslySetInnerHTML={{ __html: DEV_SNIPPET_HTML }} />
           </div>
         </div>
       </section>
