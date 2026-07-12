@@ -50,6 +50,12 @@ jobs:
           mkdir -p _site/demo
           cp -r examples/* _site/demo/
           rm -f _site/demo/vite.config.ts
+          # SPA fallback so client-routed paths resolve to the app instead of 404:
+          #  - /vault           (the vault; served 200 via its own index.html)
+          #  - /unlock, etc.    (popup routes opened by llm.js; via 404.html)
+          mkdir -p _site/vault
+          cp _site/index.html _site/vault/index.html
+          cp _site/index.html _site/404.html
           echo windowllm.org > _site/CNAME
           touch _site/.nojekyll
 

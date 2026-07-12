@@ -6,7 +6,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import ReactDOM from 'react-dom/client';
-import { Settings, Shield, Key, Plus, ExternalLink, Check, X, Loader2, AlertTriangle, Lock } from 'lucide-react';
+import { Settings, Shield, Key, Plus, ExternalLink, Check, X, Loader2, AlertTriangle, LogOut } from 'lucide-react';
 
 import './globals.css';
 
@@ -54,7 +54,7 @@ const PROVIDER_INFO: Record<ProviderType, { name: string; description: string; b
   custom: { name: 'Custom', description: 'OpenAI-compatible API', browserDirect: false },
 };
 
-function App({ onLock }: { onLock?: () => void }) {
+function App({ onExit }: { onExit?: () => void }) {
   const [providers, setProviders] = useState<StoredProviderConfig[]>([]);
   const [showAddProvider, setShowAddProvider] = useState(false);
   const api = getVaultAPI();
@@ -115,9 +115,10 @@ function App({ onLock }: { onLock?: () => void }) {
               <Badge variant={isConfigured ? 'success' : 'secondary'}>
                 {isConfigured ? 'Ready' : 'Setup Required'}
               </Badge>
-              {onLock && (
-                <Button variant="ghost" size="sm" onClick={onLock} title="Lock vault">
-                  <Lock className="h-4 w-4" />
+              {onExit && (
+                <Button variant="ghost" size="sm" onClick={onExit} title="Lock and return to home" className="gap-1.5">
+                  <LogOut className="h-4 w-4" />
+                  Exit
                 </Button>
               )}
             </div>
@@ -774,7 +775,7 @@ function UnlockPopup({ returnTo }: { returnTo: string }) {
  * Vault App Wrapper
  * Handles encryption state - shows unlock UI if vault is locked
  */
-function VaultApp() {
+function VaultApp({ onExit }: { onExit?: () => void }) {
   const encryption = getVaultEncryption();
   const [checking, setChecking] = useState(true);
   const [isUnlocked, setIsUnlocked] = useState(false);
@@ -838,6 +839,11 @@ function VaultApp() {
     setPassphrase('');
   };
 
+  const handleExit = async () => {
+    await handleLock();
+    onExit?.();
+  };
+
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && passphrase.length >= 8) {
       handleUnlock();
@@ -853,9 +859,9 @@ function VaultApp() {
     );
   }
 
-  // If vault is unlocked, show main app with lock capability
+  // If vault is unlocked, show main app with exit-to-home capability
   if (isUnlocked) {
-    return <App onLock={handleLock} />;
+    return <App onExit={handleExit} />;
   }
 
   // Not unlocked. First-time visitors get the full landing with the create-vault
@@ -922,17 +928,22 @@ function VaultApp() {
       </Card>
   );
 
-  if (isSetUp) {
-    // Returning visitor who just needs to unlock: compact centered prompt.
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-6">
-        {vaultCard}
+  // Locked (first-time setup or returning unlock): centered card, with a way home.
+  return (
+    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6">
+      <div className="w-full max-w-md mb-4">
+        {onExit && (
+          <button
+            onClick={onExit}
+            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            ← Back to home
+          </button>
+        )}
       </div>
-    );
-  }
-
-  // First-time visitor: the full landing, with the create-vault card slotted in.
-  return <Landing>{vaultCard}</Landing>;
+      {vaultCard}
+    </div>
+  );
 }
 
 /**
@@ -1062,6 +1073,39 @@ const consentOrigin = urlParams.get('origin');
 const isUnlockPopup = window.location.pathname === '/unlock' && returnTo !== null;
 const isConsentPopup = urlParams.get('consent') === 'true' && consentOrigin !== null;
 
+// Standalone site: the marketing home (Landing) lives at "/", and the vault
+// (setup / unlock / dashboard) lives at "/vault". Home stays reachable at all
+// times; the vault's "Exit" returns here. Deep loads of /vault are served by the
+// SPA fallback (404.html) on GitHub Pages.
+function Site() {
+  const inVault = () => {
+    const p = window.location.pathname.replace(/\/+$/, '');
+    return p === '/vault' || p.endsWith('/vault');
+  };
+  const [view, setView] = useState<'home' | 'vault'>(() => (inVault() ? 'vault' : 'home'));
+
+  useEffect(() => {
+    const onPop = () => setView(inVault() ? 'vault' : 'home');
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+
+  const openVault = () => {
+    window.history.pushState({}, '', '/vault');
+    setView('vault');
+    window.scrollTo(0, 0);
+  };
+  const exitVault = () => {
+    window.history.pushState({}, '', '/');
+    setView('home');
+    window.scrollTo(0, 0);
+  };
+
+  return view === 'vault'
+    ? <VaultApp onExit={exitVault} />
+    : <Landing onOpenVault={openVault} />;
+}
+
 // Mount the app
 const root = document.getElementById('root');
 if (root) {
@@ -1076,7 +1120,6 @@ if (root) {
     ReactDOM.createRoot(root).render(<UnlockPopup returnTo={returnTo} />);
   } else {
     initializeHandler();
-    // Use VaultApp wrapper which handles encryption state
-    ReactDOM.createRoot(root).render(<VaultApp />);
+    ReactDOM.createRoot(root).render(<Site />);
   }
 }

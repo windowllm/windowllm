@@ -6,7 +6,6 @@
  * vault setup/unlock card (passed as `children`) in the #setup section.
  */
 
-import type { ReactNode } from 'react';
 import { ProviderLogo } from './ProviderLogo';
 
 const PROVIDERS = [
@@ -29,7 +28,7 @@ const DEV_SNIPPET_HTML = [
   ');',
 ].join('\n');
 
-export function Landing({ children }: { children?: ReactNode }) {
+export function Landing({ onOpenVault }: { onOpenVault: () => void }) {
   return (
     <div className="wl">
       <nav className="wl-shell wl-nav">
@@ -43,7 +42,7 @@ export function Landing({ children }: { children?: ReactNode }) {
           <a href="/demo/">Demo</a>
           <a href="#developers">Developers</a>
           <a href={GITHUB} target="_blank" rel="noopener noreferrer">GitHub</a>
-          <a href="#setup" className="wl-nav-cta wl-btn wl-btn-gold" style={{ padding: '0.5rem 1rem' }}>Set up</a>
+          <button type="button" onClick={onOpenVault} className="wl-nav-cta wl-btn wl-btn-gold" style={{ padding: '0.5rem 1rem' }}>Open vault</button>
         </div>
       </nav>
 
@@ -59,7 +58,7 @@ export function Landing({ children }: { children?: ReactNode }) {
             use them, while your API keys stay sealed inside windowllm.org. No extension required.
           </p>
           <div className="wl-cta-row wl-rise" style={{ animationDelay: '0.24s' }}>
-            <a href="#setup" className="wl-btn wl-btn-gold">Set up your vault</a>
+            <button type="button" onClick={onOpenVault} className="wl-btn wl-btn-gold">Set up your vault</button>
             <a href="#developers" className="wl-btn wl-btn-ghost">For developers</a>
           </div>
         </div>
@@ -185,7 +184,7 @@ export function Landing({ children }: { children?: ReactNode }) {
         </div>
       </section>
 
-      {/* Setup — the vault card lives here */}
+      {/* Setup CTA — opens the vault at /vault */}
       <section id="setup" className="wl-setup">
         <div className="wl-shell wl-setup-inner">
           <div className="wl-section-head" style={{ marginBottom: 0 }}>
@@ -193,7 +192,19 @@ export function Landing({ children }: { children?: ReactNode }) {
             <h2 className="wl-h2">Set up your vault.</h2>
             <p>Create a passphrase to encrypt your keys, then add a provider. It takes a minute, and everything stays on your device.</p>
           </div>
-          <div>{children}</div>
+          <div>
+            <button
+              type="button"
+              onClick={onOpenVault}
+              className="wl-btn wl-btn-gold"
+              style={{ fontSize: '1.02rem', padding: '0.85rem 1.5rem' }}
+            >
+              Set up your vault
+            </button>
+            <p style={{ marginTop: '1rem', color: 'var(--wl-faint)', fontSize: '0.9rem' }}>
+              Opens your vault at windowllm.org/vault. You can return here any time.
+            </p>
+          </div>
         </div>
       </section>
 
