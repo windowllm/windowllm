@@ -452,6 +452,31 @@ const server = http.createServer(async (req, res) => {
             return;
         }
 
+        // Run arbitrary AppleScript IN THE GUI (Aqua) session. The harness is a
+        // LaunchAgent in the logged-in session, so this can drive Safari and
+        // System Events UI scripting — which `tart exec` cannot (it runs outside
+        // the session and every GUI AppleEvent times out with -1712).
+        if (req.method === 'POST' && req.url === '/run-osascript') {
+            const { script } = await parseBody(req);
+            if (!script) {
+                res.statusCode = 400;
+                res.end(JSON.stringify({ error: 'script is required' }));
+                return;
+            }
+            const tmp = path.join(os.tmpdir(), `wllm-osa-${Date.now()}.applescript`);
+            try {
+                fs.writeFileSync(tmp, script);
+                const result = await runAppleScript(tmp);
+                res.end(JSON.stringify({ result }));
+            } catch (err) {
+                res.statusCode = 500;
+                res.end(JSON.stringify({ error: err.message }));
+            } finally {
+                try { fs.unlinkSync(tmp); } catch {}
+            }
+            return;
+        }
+
         // Navigate Safari to URL
         if (req.method === 'POST' && req.url === '/navigate') {
             const { url } = await parseBody(req);
