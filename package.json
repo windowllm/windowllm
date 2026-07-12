@@ -21,6 +21,10 @@
     "test": "npm test --workspaces --if-present",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
+    "test:safari": "./scripts/safari-test/run.sh",
+    "test:safari:build": "./scripts/safari-test/build-image.sh",
+    "test:safari:rebuild": "rm -f ./scripts/safari-test/.image-hash && ./scripts/safari-test/build-image.sh",
+    "test:extension:webkit": "npm run build --workspace=@windowllm/vault && npm run build:safari:web --workspace=@windowllm/extension && ./scripts/wkwebext-test/run.sh",
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },

@@ -1,0 +1,12 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>WindowLLM WKWebExtension test page</title></head>
+<body>
+<h1>WindowLLM extension injection test</h1>
+<p>If the extension's content script ran, <code>window.llm</code> is defined in this page.</p>
+<script>
+  // Record what window.llm looks like at document load, for eyeball/debug.
+  document.title = "llm=" + (typeof window.llm) + " provider=" + ((window.llm && window.llm.provider) || "none");
+</script>
+</body>
+</html>
