@@ -138,6 +138,14 @@ function isChatOrEmbeddingModel(id: string): boolean {
   return true;
 }
 
+// Reasoning families — the o-series (o1/o3/o4/…) and gpt-5-and-newer. These apply
+// a default reasoning_effort server-side; the rest (gpt-4o, gpt-4.1, gpt-3.5) are
+// not reasoning models and reject the reasoning_effort field outright. Used only
+// to opt out of that default when function tools are present (see buildRequestBody).
+function isReasoningModel(id: string): boolean {
+  return /^o\d/.test(id) || /^gpt-([5-9]|\d\d)/.test(id);
+}
+
 // Hand-maintained fallback list, used ONLY when GET /v1/models is unreachable
 // (no key / offline). OpenAI has no public unauthenticated model list, so this is
 // a static snapshot; entries built from it are marked fallback:true for the UI.
@@ -596,6 +604,16 @@ export class OpenAIAdapter implements ProviderAdapter {
 
     if (request.tools?.length) {
       body.tools = request.tools.map(t => this.convertTool(t));
+
+      // Reasoning models default to a non-none reasoning_effort, which
+      // /v1/chat/completions rejects alongside function tools:
+      //   "Function tools with reasoning_effort are not supported for <model> in
+      //    /v1/chat/completions. ... set reasoning_effort to 'none'."
+      // Opt out explicitly so tool calling works on this endpoint. Gated to
+      // reasoning models because non-reasoning ones reject the field entirely.
+      if (isReasoningModel(model)) {
+        body.reasoning_effort = 'none';
+      }
     }
 
     return body;

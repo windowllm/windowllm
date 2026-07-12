@@ -119,6 +119,33 @@ describe('OpenAI adapter', () => {
     expect(chunks.find(c => c.type === 'usage')?.usage?.totalTokens).toBe(8);
   });
 
+  it("sends reasoning_effort 'none' for a reasoning model with tools, but not for gpt-4o", async () => {
+    let sent: any;
+    globalThis.fetch = vi.fn(async (_url, init: any) => {
+      sent = JSON.parse(init.body);
+      return jsonResponse({
+        id: 'x', object: 'chat.completion', created: 0, model: sent.model,
+        choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+      });
+    }) as typeof fetch;
+
+    const tools = [{ name: 'get_weather', description: 'w', parameters: { type: 'object' as const, properties: {} } }];
+    const o = createOpenAIAdapter({ apiKey: 'k' });
+
+    // Reasoning model (gpt-5.6-luna) + tools → must opt out of the default effort.
+    await o.complete({ model: 'openai/gpt-5.6-luna', messages: [{ role: 'user', content: 'x' }], tools });
+    expect(sent.reasoning_effort).toBe('none');
+
+    // Non-reasoning model rejects the field entirely, so it must be absent.
+    await o.complete({ model: 'openai/gpt-4o', messages: [{ role: 'user', content: 'x' }], tools });
+    expect(sent.reasoning_effort).toBeUndefined();
+
+    // And absent even for a reasoning model when no tools are requested.
+    await o.complete({ model: 'openai/gpt-5.6-luna', messages: [{ role: 'user', content: 'x' }] });
+    expect(sent.reasoning_effort).toBeUndefined();
+  });
+
   it('maps HTTP 429 to a retryable rate-limit error', async () => {
     globalThis.fetch = vi.fn(async () => {
       const h = new Headers({ 'retry-after': '2' });
