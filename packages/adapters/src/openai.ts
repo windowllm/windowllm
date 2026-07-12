@@ -130,7 +130,12 @@ const cap = (o: Partial<ModelCapabilities> = {}): ModelCapabilities => ({
 function isChatOrEmbeddingModel(id: string): boolean {
   if (/embedding/.test(id)) return true;
   if (!/^(gpt-|chatgpt-|o1|o3|o4)/.test(id)) return false;
-  return !/(audio|realtime|transcribe|tts|whisper|dall-e|moderation|image|instruct)/.test(id);
+  if (/(audio|realtime|transcribe|tts|whisper|dall-e|moderation|image|instruct)/.test(id)) return false;
+  // Hide dated snapshots (gpt-4o-2024-05-13, gpt-4-0613, gpt-4-1106-preview) so the
+  // list stays clean and fast; a pinned snapshot is still usable by its exact id.
+  if (/\d{4}-\d{2}-\d{2}/.test(id)) return false;
+  if (/-\d{4}(-preview)?$/.test(id)) return false;
+  return true;
 }
 
 // Hand-maintained fallback list, used ONLY when GET /v1/models is unreachable

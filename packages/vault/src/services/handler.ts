@@ -43,6 +43,15 @@ import { getVaultStorage, type StoredProviderConfig, getVaultEncryption } from '
  */
 type CapabilityName = 'chat' | 'streaming' | 'vision' | 'tools' | 'embeddings' | 'jsonMode' | 'systemPrompt' | 'multiTurn' | 'audioInput' | 'audioOutput';
 
+// Consent is binary: once a user allows a site to use their vault, that site may
+// use any capability the chosen model supports. (The consent UI does not expose
+// per-capability toggles, so gating individual capabilities only ever blocked
+// legitimate use, e.g. tool calling.)
+const ALL_CAPABILITIES: CapabilityName[] = [
+  'chat', 'streaming', 'vision', 'tools', 'embeddings',
+  'jsonMode', 'systemPrompt', 'multiTurn', 'audioInput', 'audioOutput',
+];
+
 /**
  * Active session tracking with bound permissions
  */
@@ -79,7 +88,9 @@ export class VaultHandler {
   private sessions = new Map<string, ActiveSession>();
   private rateLimits = new Map<string, RateLimitState>();
   private pendingRequests = new Map<string, AbortController>();
-  private static readonly MODELS_CACHE_KEY = 'windowllm:models_cache';
+  // Bump the version suffix to invalidate stale caches after a fix (e.g. the
+  // old keyless-fallback list). New lists then cache normally for fast reloads.
+  private static readonly MODELS_CACHE_KEY = 'windowllm:models_cache:v2';
   private static readonly MODELS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
   // API keys can only be decrypted once the vault is unlocked (the master key is
   // restored from IndexedDB asynchronously). Adapters are therefore built lazily
@@ -467,7 +478,6 @@ export class VaultHandler {
 
     // Check existing permission
     const permission = await storage.getPermission(origin);
-    const grantedCapabilities = permission?.capabilities || [];
 
     // Auto-approve if origin is in the list
     const autoApprove = settings.autoApproveOrigins.includes(origin);
@@ -487,10 +497,8 @@ export class VaultHandler {
     // Use the same ID for both session storage and client token
     const sessionId = crypto.randomUUID();
 
-    // Determine effective capabilities: use stored permission or defaults
-    const effectiveCapabilities = grantedCapabilities.length > 0
-      ? grantedCapabilities
-      : ['chat', 'streaming'];
+    // Once a site is allowed, it may use any capability the model supports.
+    const effectiveCapabilities = ALL_CAPABILITIES;
 
     this.sessions.set(sessionId, {
       id: sessionId,
@@ -505,9 +513,7 @@ export class VaultHandler {
     const response = createVaultResponse('handshake', request.id, {
       success: true,
       sessionToken: sessionId,
-      grantedCapabilities: grantedCapabilities.length > 0
-        ? grantedCapabilities
-        : ['chat', 'streaming'] as (keyof ModelCapabilities)[],
+      grantedCapabilities: ALL_CAPABILITIES as (keyof ModelCapabilities)[],
     });
     source.postMessage(response, origin);
   }
@@ -790,10 +796,14 @@ export class VaultHandler {
       // Ignore cache errors
     }
 
-    // Fetch from all adapters in parallel
+    // Fetch from all adapters in parallel, each with its own timeout so one
+    // slow or unreachable provider (e.g. a configured-but-offline Ollama) can't
+    // stall the whole list — ready providers return immediately.
+    const LIST_TIMEOUT_MS = 6000;
     const modelPromises = Array.from(this.adapters.values()).map(async (adapter) => {
       try {
-        return await adapter.listModels();
+        const timeout = new Promise<never[]>((resolve) => setTimeout(() => resolve([]), LIST_TIMEOUT_MS));
+        return await Promise.race([adapter.listModels(), timeout]);
       } catch (error) {
         console.warn(`Failed to list models from adapter:`, error);
         return [];

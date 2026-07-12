@@ -4,94 +4,16 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>WindowLLM - Basic Example</title>
-  <style>
-    * { box-sizing: border-box; }
-    body {
-      font-family: system-ui, -apple-system, sans-serif;
-      max-width: 800px;
-      margin: 0 auto;
-      padding: 2rem;
-      background: #1a1a2e;
-      color: #eee;
-    }
-    h1 { color: #e94560; }
-    .model-selector {
-      position: relative;
-      margin-bottom: 1rem;
-      max-width: 350px;
-    }
-    .model-search {
-      width: 100%;
-      padding: 0.75rem;
-      border: 1px solid #333;
-      border-radius: 4px;
-      background: #16213e;
-      color: #eee;
-      font-size: 0.9rem;
-    }
-    .model-search:focus { outline: none; border-color: #e94560; }
-    .model-dropdown {
-      position: absolute;
-      top: 100%;
-      left: 0;
-      right: 0;
-      max-height: 300px;
-      overflow-y: auto;
-      background: #16213e;
-      border: 1px solid #333;
-      border-top: none;
-      border-radius: 0 0 4px 4px;
-      z-index: 100;
-      display: none;
-    }
-    .model-dropdown.open { display: block; }
-    .model-option {
-      padding: 0.5rem 0.75rem;
-      cursor: pointer;
-      font-size: 0.85rem;
-    }
-    .model-option:hover { background: #0f3460; }
-    .model-option.selected { background: #e94560; }
-    .model-option small { color: #888; display: block; font-size: 0.75rem; }
-    .input-group {
-      display: flex;
-      gap: 0.5rem;
-      margin-bottom: 1rem;
-    }
-    input {
-      flex: 1;
-      padding: 0.75rem;
-      border: 1px solid #333;
-      border-radius: 4px;
-      background: #16213e;
-      color: #eee;
-      font-size: 1rem;
-    }
-    button {
-      padding: 0.75rem 1.5rem;
-      background: #e94560;
-      color: white;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 1rem;
-    }
-    button:hover { background: #ff6b6b; }
-    button:disabled { background: #666; cursor: not-allowed; }
-    #output {
-      background: #16213e;
-      border: 1px solid #333;
-      border-radius: 4px;
-      padding: 1rem;
-      min-height: 200px;
-      white-space: pre-wrap;
-      font-family: 'SF Mono', Monaco, monospace;
-    }
-    .error { color: #ff6b6b; }
-    .status { color: #888; font-size: 0.9rem; margin-bottom: 1rem; }
-  </style>
+  <link rel="stylesheet" href="../demo.css">
 </head>
 <body>
+  <header class="wld-nav">
+    <a class="wld-brand" href="/"><span class="wld-mark">W</span> WindowLLM</a>
+    <nav class="wld-nav-links">
+      <a href="/demo/">All demos</a>
+      <a href="/">Home</a>
+    </nav>
+  </header>
   <h1>WindowLLM Basic Example</h1>
 
   <div class="status" id="status">Checking WindowLLM availability...</div>

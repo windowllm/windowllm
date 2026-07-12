@@ -957,10 +957,11 @@ function ConsentPopup({ origin }: { origin: string }) {
   const handleGrant = async () => {
     setLoading(true);
     try {
-      // Grant permission with default capabilities
+      // Grant permission for the full capability set — consent is binary:
+      // allowing a site lets it use any capability the chosen model supports.
       await api.permissions.grant({
         origin,
-        capabilities: ['chat', 'streaming'],
+        capabilities: ['chat', 'streaming', 'vision', 'tools', 'embeddings', 'jsonMode', 'systemPrompt', 'multiTurn'],
         grantedAt: Date.now(),
       });
 
