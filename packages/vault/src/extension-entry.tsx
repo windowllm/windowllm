@@ -24,15 +24,16 @@ import { Label } from './components/ui/label';
 import { Badge } from './components/ui/badge';
 import { Switch } from './components/ui/switch';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './components/ui/tabs';
+import { ProviderLogo } from './ProviderLogo';
 
 type ProviderType = 'openai' | 'anthropic' | 'ollama' | 'openrouter' | 'custom';
 
-const PROVIDER_INFO: Record<ProviderType, { name: string; description: string; icon: string }> = {
-  openai: { name: 'OpenAI', description: 'GPT-4, GPT-4o, and more', icon: '🤖' },
-  anthropic: { name: 'Anthropic', description: 'Claude 3.5, Claude 4', icon: '🧠' },
-  ollama: { name: 'Ollama', description: 'Local models', icon: '🦙' },
-  openrouter: { name: 'OpenRouter', description: 'Multi-provider gateway', icon: '🔀' },
-  custom: { name: 'Custom', description: 'OpenAI-compatible API', icon: '⚙️' },
+const PROVIDER_INFO: Record<ProviderType, { name: string; description: string }> = {
+  openai: { name: 'OpenAI', description: 'GPT-4, GPT-4o, and more' },
+  anthropic: { name: 'Anthropic', description: 'Claude 3.5, Claude 4' },
+  ollama: { name: 'Ollama', description: 'Local models' },
+  openrouter: { name: 'OpenRouter', description: 'Multi-provider gateway' },
+  custom: { name: 'Custom', description: 'OpenAI-compatible API' },
 };
 
 function ExtensionApp() {
@@ -196,8 +197,6 @@ function ProviderCard({ provider, onUpdate, onDelete }: ProviderCardProps) {
   const [editedApiKey, setEditedApiKey] = useState(provider.apiKey || '');
   const [editedBaseUrl, setEditedBaseUrl] = useState(provider.baseUrl || '');
 
-  const info = PROVIDER_INFO[provider.type as ProviderType] || PROVIDER_INFO.custom;
-
   const handleSave = () => {
     onUpdate({
       ...provider,
@@ -212,7 +211,7 @@ function ProviderCard({ provider, onUpdate, onDelete }: ProviderCardProps) {
       <CardHeader className="p-3 pb-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-lg">{info.icon}</span>
+            <ProviderLogo type={provider.type} size={22} />
             <div>
               <CardTitle className="text-sm">{provider.name}</CardTitle>
             </div>
@@ -302,7 +301,7 @@ function AddProviderCard({ onAdd, onCancel }: AddProviderCardProps) {
               className="flex-col h-14 gap-0.5 p-1"
               onClick={() => setType(key)}
             >
-              <span className="text-base">{PROVIDER_INFO[key].icon}</span>
+              <ProviderLogo type={key} size={20} />
               <span className="text-[10px]">{PROVIDER_INFO[key].name}</span>
             </Button>
           ))}

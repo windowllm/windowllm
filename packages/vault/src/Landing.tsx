@@ -7,13 +7,14 @@
  */
 
 import type { ReactNode } from 'react';
+import { ProviderLogo } from './ProviderLogo';
 
 const PROVIDERS = [
-  { icon: '🧠', name: 'Anthropic' },
-  { icon: '🤖', name: 'OpenAI' },
-  { icon: '✨', name: 'Gemini' },
-  { icon: '🦙', name: 'Ollama' },
-  { icon: '🔀', name: 'OpenRouter' },
+  { type: 'anthropic', name: 'Anthropic' },
+  { type: 'openai', name: 'OpenAI' },
+  { type: 'gemini', name: 'Gemini' },
+  { type: 'ollama', name: 'Ollama' },
+  { type: 'openrouter', name: 'OpenRouter' },
 ];
 
 const GITHUB = 'https://github.com/windowllm/windowllm';
@@ -116,7 +117,7 @@ export function Landing({ children }: { children?: ReactNode }) {
         </div>
         <div className="wl-providers">
           {PROVIDERS.map((p) => (
-            <span className="wl-chip" key={p.name}><span>{p.icon}</span><span>{p.name}</span></span>
+            <span className="wl-chip" key={p.name}><ProviderLogo type={p.type} size={18} /><span>{p.name}</span></span>
           ))}
         </div>
         <p style={{ marginTop: '1.2rem', color: 'var(--wl-faint)', fontSize: '0.9rem', maxWidth: '52ch' }}>

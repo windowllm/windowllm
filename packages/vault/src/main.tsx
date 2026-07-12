@@ -34,6 +34,7 @@ import { Badge } from './components/ui/badge';
 import { Switch } from './components/ui/switch';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './components/ui/tabs';
 import { Landing } from './Landing';
+import { ProviderLogo } from './ProviderLogo';
 
 
 // Check if we're in iframe mode
@@ -41,13 +42,16 @@ const isIframe = window.self !== window.top;
 
 type ProviderType = 'openai' | 'anthropic' | 'ollama' | 'openrouter' | 'gemini' | 'custom';
 
-const PROVIDER_INFO: Record<ProviderType, { name: string; description: string; icon: string }> = {
-  openai: { name: 'OpenAI', description: 'GPT models (browser-direct)', icon: '🤖' },
-  anthropic: { name: 'Anthropic', description: 'Claude models', icon: '🧠' },
-  gemini: { name: 'Google Gemini', description: 'Gemini models (browser-direct)', icon: '✨' },
-  ollama: { name: 'Ollama', description: 'Local models', icon: '🦙' },
-  openrouter: { name: 'OpenRouter', description: 'Multi-provider gateway', icon: '🔀' },
-  custom: { name: 'Custom', description: 'OpenAI-compatible API', icon: '⚙️' },
+// browserDirect: works from the vault (iframe) with no extension. Verified live
+// 2026-07 — OpenAI/Gemini are now browser-callable; only local (Ollama) and
+// arbitrary custom endpoints still depend on the extension / server CORS config.
+const PROVIDER_INFO: Record<ProviderType, { name: string; description: string; browserDirect: boolean }> = {
+  openai: { name: 'OpenAI', description: 'GPT models', browserDirect: true },
+  anthropic: { name: 'Anthropic', description: 'Claude models', browserDirect: true },
+  gemini: { name: 'Google Gemini', description: 'Gemini models', browserDirect: true },
+  ollama: { name: 'Ollama', description: 'Local models', browserDirect: false },
+  openrouter: { name: 'OpenRouter', description: 'Multi-provider gateway', browserDirect: true },
+  custom: { name: 'Custom', description: 'OpenAI-compatible API', browserDirect: false },
 };
 
 function App({ onLock }: { onLock?: () => void }) {
@@ -257,7 +261,7 @@ function ProviderCard({ provider, onUpdate, onDelete, onTest }: ProviderCardProp
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <span className="text-2xl">{info.icon}</span>
+            <ProviderLogo type={provider.type} size={28} />
             <div>
               <CardTitle className="text-lg">{provider.name}</CardTitle>
               <CardDescription>{info.description}</CardDescription>
@@ -282,20 +286,8 @@ function ProviderCard({ provider, onUpdate, onDelete, onTest }: ProviderCardProp
               <div className="text-sm">
                 <p className="font-medium text-yellow-500">Local provider</p>
                 <p className="text-muted-foreground mt-1">
-                  Ollama runs on your machine. In iframe mode it only works if you set
+                  Ollama runs on your machine. In iframe mode the vault can only reach it if you set
                   <code className="mx-1">OLLAMA_ORIGINS</code>; otherwise install the browser extension.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {provider.type === 'ollama' && (
-            <div className="flex gap-3 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
-              <AlertTriangle className="h-5 w-5 text-yellow-500 flex-shrink-0 mt-0.5" />
-              <div className="text-sm">
-                <p className="font-medium text-yellow-500">Extension Required</p>
-                <p className="text-muted-foreground mt-1">
-                  Local models require the browser extension to bypass CORS.
                 </p>
               </div>
             </div>
@@ -412,35 +404,40 @@ function AddProviderCard({ onAdd, onCancel }: AddProviderCardProps) {
               className="flex-col h-20 gap-1"
               onClick={() => setType(key)}
             >
-              <span className="text-xl">{PROVIDER_INFO[key].icon}</span>
+              <ProviderLogo type={key} size={24} />
               <span className="text-xs">{PROVIDER_INFO[key].name}</span>
             </Button>
           ))}
         </div>
 
-        {type === 'openai' && (
-          <div className="flex gap-3 p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
-            <AlertTriangle className="h-5 w-5 text-yellow-500 flex-shrink-0 mt-0.5" />
+        {info.browserDirect ? (
+          <div className="flex gap-3 p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/30">
+            <Check className="h-5 w-5 text-emerald-500 flex-shrink-0 mt-0.5" />
             <div className="text-sm">
-              <p className="font-medium text-yellow-500">CORS Not Supported</p>
+              <p className="font-medium text-emerald-500">Works without the extension</p>
               <p className="text-muted-foreground mt-1">
-                OpenAI does not support browser CORS requests. This provider will only work with the
-                browser extension installed. For iframe mode, use <strong>OpenRouter</strong> instead
-                (which provides access to OpenAI models) or <strong>Anthropic</strong>.
+                {info.name} supports browser-direct calls, so it runs from the vault with no
+                extension needed. The extension is still optional for extra capabilities.
               </p>
             </div>
           </div>
-        )}
-
-        {type === 'ollama' && (
+        ) : type === 'ollama' ? (
           <div className="flex gap-3 p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
             <AlertTriangle className="h-5 w-5 text-yellow-500 flex-shrink-0 mt-0.5" />
             <div className="text-sm">
-              <p className="font-medium text-yellow-500">Extension Required</p>
+              <p className="font-medium text-yellow-500">Local provider</p>
               <p className="text-muted-foreground mt-1">
-                Local models like Ollama require the browser extension to bypass CORS restrictions.
-                Without the extension, requests to localhost will be blocked.
+                Ollama runs on your machine. In iframe mode the vault can only reach it if you set
+                <code className="mx-1">OLLAMA_ORIGINS</code>, or with the browser extension installed.
               </p>
+            </div>
+          </div>
+        ) : (
+          <div className="flex gap-3 p-4 rounded-lg bg-muted/40 border">
+            <AlertTriangle className="h-5 w-5 text-muted-foreground flex-shrink-0 mt-0.5" />
+            <div className="text-sm text-muted-foreground">
+              Custom endpoints work from the browser only if your server sends the right CORS
+              headers. If it does not, use the browser extension.
             </div>
           </div>
         )}
