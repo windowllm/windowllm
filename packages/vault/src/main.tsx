@@ -33,6 +33,7 @@ import { Label } from './components/ui/label';
 import { Badge } from './components/ui/badge';
 import { Switch } from './components/ui/switch';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './components/ui/tabs';
+import { Landing } from './Landing';
 
 
 // Check if we're in iframe mode
@@ -860,9 +861,9 @@ function VaultApp() {
     return <App onLock={handleLock} />;
   }
 
-  // Show unlock UI
-  return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-6">
+  // Not unlocked. First-time visitors get the full landing with the create-vault
+  // card slotted in; returning visitors who only need to unlock get a compact prompt.
+  const vaultCard = (
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center font-bold text-3xl text-white mx-auto mb-4">
@@ -922,8 +923,19 @@ function VaultApp() {
           </Button>
         </CardFooter>
       </Card>
-    </div>
   );
+
+  if (isSetUp) {
+    // Returning visitor who just needs to unlock: compact centered prompt.
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-6">
+        {vaultCard}
+      </div>
+    );
+  }
+
+  // First-time visitor: the full landing, with the create-vault card slotted in.
+  return <Landing>{vaultCard}</Landing>;
 }
 
 /**

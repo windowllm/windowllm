@@ -59,3 +59,6 @@ spec/*.html
 
 # Assembled Pages site
 _site/
+
+# Playwright MCP scratch
+.playwright-mcp/
