@@ -55,7 +55,12 @@ const PROVIDER_INFO: Record<ProviderType, { name: string; description: string; b
   custom: { name: 'Custom', description: 'OpenAI-compatible API', browserDirect: false },
 };
 
-function App({ onExit }: { onExit?: () => void }) {
+interface AppProps {
+  readonly onNavigateHome?: () => void;
+  readonly onSignOut?: () => void;
+}
+
+function App({ onNavigateHome, onSignOut }: AppProps) {
   const [providers, setProviders] = useState<StoredProviderConfig[]>([]);
   const [showAddProvider, setShowAddProvider] = useState(false);
   const api = getVaultAPI();
@@ -103,9 +108,15 @@ function App({ onExit }: { onExit?: () => void }) {
         <div className="container max-w-4xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-amber-400 to-amber-600 rounded-lg flex items-center justify-center font-bold text-xl text-neutral-900">
+              <button
+                type="button"
+                onClick={onNavigateHome}
+                aria-label="Go to home page"
+                title="Go to home page"
+                className="w-10 h-10 bg-gradient-to-br from-amber-400 to-amber-600 rounded-lg flex items-center justify-center font-bold text-xl text-neutral-900 transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              >
                 W
-              </div>
+              </button>
               <div>
                 <h1 className="text-xl font-bold">WindowLLM</h1>
                 <p className="text-sm text-muted-foreground">Your AI, Your Rules</p>
@@ -116,10 +127,10 @@ function App({ onExit }: { onExit?: () => void }) {
               <Badge variant={isConfigured ? 'success' : 'secondary'}>
                 {isConfigured ? 'Ready' : 'Setup Required'}
               </Badge>
-              {onExit && (
-                <Button variant="ghost" size="sm" onClick={onExit} title="Lock and return to home" className="gap-1.5">
+              {onSignOut && (
+                <Button variant="ghost" size="sm" onClick={onSignOut} title="Lock vault and return to home" className="gap-1.5">
                   <LogOut className="h-4 w-4" />
-                  Exit
+                  Sign out
                 </Button>
               )}
             </div>
@@ -892,7 +903,7 @@ function UnlockPopup({ returnTo }: { returnTo: string }) {
  * Vault App Wrapper
  * Handles encryption state - shows unlock UI if vault is locked
  */
-function VaultApp({ onExit }: { onExit?: () => void }) {
+function VaultApp({ onNavigateHome }: { readonly onNavigateHome?: () => void }) {
   const encryption = getVaultEncryption();
   const [checking, setChecking] = useState(true);
   const [isUnlocked, setIsUnlocked] = useState(false);
@@ -956,9 +967,9 @@ function VaultApp({ onExit }: { onExit?: () => void }) {
     setPassphrase('');
   };
 
-  const handleExit = async () => {
+  const handleSignOut = async () => {
     await handleLock();
-    onExit?.();
+    onNavigateHome?.();
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -976,9 +987,9 @@ function VaultApp({ onExit }: { onExit?: () => void }) {
     );
   }
 
-  // If vault is unlocked, show main app with exit-to-home capability
+  // If vault is unlocked, show the main app with home and sign-out actions.
   if (isUnlocked) {
-    return <App onExit={handleExit} />;
+    return <App onNavigateHome={onNavigateHome} onSignOut={handleSignOut} />;
   }
 
   // Not unlocked. First-time visitors get the full landing with the create-vault
@@ -1049,9 +1060,9 @@ function VaultApp({ onExit }: { onExit?: () => void }) {
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6">
       <div className="w-full max-w-md mb-4">
-        {onExit && (
+        {onNavigateHome && (
           <button
-            onClick={onExit}
+            onClick={onNavigateHome}
             className="text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             ← Back to home
@@ -1194,7 +1205,7 @@ const isConsentPopup = urlParams.get('consent') === 'true' && consentOrigin !== 
 
 // Standalone site: the marketing home (Landing) lives at "/", and the vault
 // (setup / unlock / dashboard) lives at "/vault". Home stays reachable at all
-// times; the vault's "Exit" returns here. Deep loads of /vault are served by the
+// times; the vault's home and sign-out actions return here. Deep loads of /vault are served by the
 // SPA fallback (404.html) on GitHub Pages.
 function Site() {
   const inVault = () => {
@@ -1222,14 +1233,14 @@ function Site() {
     setView('vault');
     window.scrollTo(0, 0);
   };
-  const exitVault = () => {
+  const navigateHome = () => {
     window.history.pushState({}, '', '/');
     setView('home');
     window.scrollTo(0, 0);
   };
 
   return view === 'vault'
-    ? <VaultApp onExit={exitVault} />
+    ? <VaultApp onNavigateHome={navigateHome} />
     : <Landing onOpenVault={openVault} />;
 }
 
