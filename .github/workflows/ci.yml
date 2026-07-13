@@ -15,8 +15,8 @@ jobs:
     name: Typecheck & unit tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 20
           cache: npm
@@ -35,8 +35,8 @@ jobs:
     # WKWebExtension API: macOS 15.4+ / Xcode 16.3+ (bump the runner if unavailable).
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 20
           cache: npm
