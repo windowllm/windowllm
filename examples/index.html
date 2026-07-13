@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WindowLLM Examples</title>
+  <title>WindowLLM · Live demos</title>
   <link rel="stylesheet" href="demo.css">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%23F5A623' rx='15' width='100' height='100'/><text x='50%' y='50%' dominant-baseline='central' text-anchor='middle' font-size='60' font-family='system-ui,sans-serif' font-weight='800' fill='%23171717'>W</text></svg>">
 </head>
@@ -11,38 +11,102 @@
   <header class="wld-nav">
     <a class="wld-brand" href="/"><span class="wld-mark">W</span> WindowLLM</a>
     <nav class="wld-nav-links">
-      <a href="/demo/">All demos</a>
+      <a href="/docs/">Docs</a>
+      <a href="/spec/">Spec</a>
       <a href="/">Home</a>
     </nav>
   </header>
-  <h1>WindowLLM Examples</h1>
-  <p>Demonstrations of the window.llm API</p>
 
-  <div class="examples">
-    <a href="capabilities/">
-      <h2>Model Discovery</h2>
-      <p>Explore available providers, models, and their capabilities</p>
+  <section class="demo-hero">
+    <span class="demo-kicker">window.llm · live demos</span>
+    <h1>See it actually work.</h1>
+    <p class="lead">Six real pages, each calling live models through your vault, with no keys in the page and no backend. <a href="/">Set up your vault</a>, then open any demo.</p>
+  </section>
+
+  <div class="demo-grid">
+    <a class="demo-card featured" href="chat/">
+      <div class="demo-card-body">
+        <div class="demo-card-top">
+          <span class="demo-n">01</span>
+          <span class="demo-tag">multi-turn</span>
+        </div>
+        <h2>Chat</h2>
+        <p>A conversation that remembers context and streams every reply. The full API in one page.</p>
+        <div class="demo-api"><span>requestSession()</span><span>session.stream()</span></div>
+      </div>
+      <div class="demo-mock" aria-hidden="true">
+        <div class="demo-mock-chrome"><i></i><i></i><i></i><span>chat</span></div>
+        <div class="demo-mock-body">
+          <div class="mock-msg user">Summarize WindowLLM in one line.</div>
+          <div class="mock-msg bot">A browser API that lets any site use your own AI, with your keys sealed.<span class="mock-cursor"></span></div>
+        </div>
+      </div>
     </a>
-    <a href="basic/">
-      <h2>Basic</h2>
-      <p>Simple one-shot completion with a text input</p>
-    </a>
-    <a href="streaming/">
+
+    <a class="demo-card" href="streaming/">
+      <div class="demo-card-top">
+        <span class="demo-n">02</span>
+        <span class="demo-tag">token by token</span>
+      </div>
       <h2>Streaming</h2>
-      <p>Real-time streaming responses with a typing cursor effect</p>
+      <p>Responses that appear as they are generated, live cursor and all.</p>
+      <div class="demo-api"><span>session.stream()</span></div>
     </a>
-    <a href="chat/">
-      <h2>Chat</h2>
-      <p>Multi-turn conversation with streaming responses</p>
+
+    <a class="demo-card" href="basic/">
+      <div class="demo-card-top">
+        <span class="demo-n">03</span>
+        <span class="demo-tag">one-shot</span>
+      </div>
+      <h2>Basic</h2>
+      <p>The simplest call there is: one prompt in, one answer out.</p>
+      <div class="demo-api"><span>session.complete()</span></div>
     </a>
-    <a href="tools/">
-      <h2>Tool Calling</h2>
-      <p>Function calling with weather, calculator, and time tools</p>
+
+    <a class="demo-card" href="tools/">
+      <div class="demo-card-top">
+        <span class="demo-n">04</span>
+        <span class="demo-tag">function calling</span>
+      </div>
+      <h2>Tool calling</h2>
+      <p>The model picks from weather, calculator, and clock tools, then calls them.</p>
+      <div class="demo-api"><span>tools[]</span><span>finishReason</span></div>
     </a>
-    <a href="local-models/">
-      <h2>Local Models</h2>
-      <p>Use local LLMs via Ollama with model selection and pulling</p>
+
+    <a class="demo-card" href="capabilities/">
+      <div class="demo-card-top">
+        <span class="demo-n">05</span>
+        <span class="demo-tag">discovery</span>
+      </div>
+      <h2>Model discovery</h2>
+      <p>Every provider, model, and capability the vault has, listed live.</p>
+      <div class="demo-api"><span>models.list()</span><span>capabilities</span></div>
+    </a>
+
+    <a class="demo-card" href="local-models/">
+      <div class="demo-card-top">
+        <span class="demo-n">06</span>
+        <span class="demo-tag">on-device</span>
+      </div>
+      <h2>Local models</h2>
+      <p>Run models locally through Ollama. No keys, no cloud, fully offline.</p>
+      <div class="demo-api"><span>provider: "ollama"</span></div>
+    </a>
+
+    <a class="demo-card cta" href="/docs/">
+      <div class="demo-card-top">
+        <span class="demo-n">→</span>
+        <span class="demo-tag">your turn</span>
+      </div>
+      <h2>Build one yourself</h2>
+      <p>Every demo here is a few lines of <code>window.llm</code>. The developer guide takes you from a single script tag to streaming, tools, and embeddings.</p>
+      <div class="demo-api"><span>Read the developer guide →</span></div>
     </a>
   </div>
+
+  <footer class="demo-foot">
+    <span>Each demo is a static page. View source to see exactly how little it takes.</span>
+    <span><a href="/docs/">Developer guide</a> · <a href="/spec/">Spec</a> · <a href="https://github.com/windowllm/windowllm" target="_blank" rel="noopener">GitHub</a></span>
+  </footer>
 </body>
 </html>

@@ -15,6 +15,7 @@ on:
       - 'packages/types/**'
       - 'spec/**'
       - 'docs/index.html'
+      - 'examples/**'
       - '.github/workflows/deploy-pages.yml'
   workflow_dispatch:
 

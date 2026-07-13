@@ -27,16 +27,32 @@ body {
   max-width: 940px;
   padding: 0 1.4rem 5rem;
   min-height: 100vh;
-  background:
-    radial-gradient(90% 55% at 0% 0%, oklch(0.84 0.135 79 / 0.07), transparent 55%),
-    radial-gradient(70% 45% at 100% 0%, oklch(0.7 0.15 274 / 0.06), transparent 60%),
-    var(--wld-ground);
-  background-attachment: fixed;
+  position: relative;
+  background: var(--wld-ground);
   color: var(--wld-ink);
   font-family: var(--wld-sans);
-  line-height: 1.5;
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
 }
+
+/* The brand motif, shared with windowllm.org: warm light falling through a dark
+   blueprint grid ("the window"), anchored to the top and faded out before the
+   fold. Fixed so scrolling never janks it. Every demo inherits it. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(108% 62% at 3% -5%, oklch(0.84 0.135 79 / 0.14), transparent 44%),
+    radial-gradient(82% 55% at 100% 0%, oklch(0.7 0.15 274 / 0.08), transparent 56%),
+    linear-gradient(var(--wld-line) 1px, transparent 1px) 0 0 / 100% 88px,
+    linear-gradient(90deg, var(--wld-line) 1px, transparent 1px) 0 0 / 88px 100%;
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 26%, transparent 70%);
+  mask-image: linear-gradient(180deg, #000 0%, #000 26%, transparent 70%);
+}
+body > * { position: relative; z-index: 1; }
 
 a { color: var(--wld-gold-ink); text-decoration: none; }
 a:hover { text-decoration: underline; }
@@ -66,6 +82,29 @@ h3 { font-weight: 650; letter-spacing: -0.01em; }
 .subtitle, h1 + p { color: var(--wld-dim); margin: 0 0 1.8rem; font-size: 1.05rem; }
 p { color: var(--wld-dim); }
 code { font-family: var(--wld-mono); font-size: 0.9em; }
+
+/* ---- demo header (shared across every demo page) ---- */
+.demo-head { margin: 0.6rem 0 2rem; }
+.demo-kicker {
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  font-family: var(--wld-mono); font-size: 0.78rem; letter-spacing: 0.02em;
+  color: var(--wld-gold-ink);
+}
+.demo-kicker::before {
+  content: ""; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--wld-gold); box-shadow: 0 0 10px 1px var(--wld-gold);
+  animation: wld-pulse 2.6s ease-in-out infinite;
+}
+@keyframes wld-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+.demo-head h1 { margin: 0.7rem 0 0; }
+.demo-head .lead { color: var(--wld-dim); font-size: 1.06rem; margin: 0.7rem 0 0; max-width: 62ch; }
+.demo-head .lead code { color: var(--wld-ink); }
+.demo-api { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1.15rem; }
+.demo-api span {
+  font-family: var(--wld-mono); font-size: 0.76rem; color: var(--wld-dim);
+  padding: 0.28rem 0.6rem; border: 1px solid var(--wld-line); border-radius: 7px;
+  background: oklch(1 0 0 / 0.02);
+}
 
 /* ---- form controls ---- */
 input, textarea, select, .search-input, .model-search {
@@ -200,11 +239,79 @@ button.stop:hover:not(:disabled) { box-shadow: none; border-color: oklch(1 0 0 /
 .progress-bar { height: 8px; background: var(--wld-raise2); border-radius: 999px; overflow: hidden; margin: 0.6rem 0; }
 .progress-bar .fill, .progress-bar > .fill { height: 100%; background: linear-gradient(90deg, var(--wld-gold), var(--wld-gold-2)); transition: width 0.3s ease; }
 .tool-item { padding: 0.7rem 0.9rem; border: 1px solid var(--wld-line); border-radius: 10px; background: oklch(1 0 0 / 0.02); margin: 0.5rem 0; }
-.examples { display: flex; flex-direction: column; gap: 0.9rem; margin-top: 1.8rem; }
-.examples a {
-  display: block; padding: 1.35rem 1.5rem; border: 1px solid var(--wld-line); border-radius: 14px;
-  background: var(--wld-raise); color: var(--wld-ink); transition: border-color 0.18s, transform 0.18s, background 0.18s;
+/* ---- demo gallery (index) ---- */
+.demo-hero { margin: 0.8rem 0 2.6rem; }
+.demo-hero h1 { margin: 0.9rem 0 0; max-width: 16ch; }
+.demo-hero .lead { color: var(--wld-dim); font-size: clamp(1.05rem, 1.6vw, 1.2rem); max-width: 56ch; margin: 1rem 0 0; }
+
+.demo-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(256px, 1fr)); }
+
+.demo-card {
+  display: block; padding: 1.4rem 1.5rem; border-radius: 16px;
+  border: 1px solid var(--wld-line); background: var(--wld-raise); color: var(--wld-ink);
+  position: relative; overflow: hidden;
+  transition: border-color 0.18s, transform 0.2s cubic-bezier(0.22,1,0.36,1), box-shadow 0.25s, background 0.18s;
 }
-.examples a:hover { border-color: oklch(0.84 0.135 79 / 0.5); background: var(--wld-raise2); transform: translateY(-2px); text-decoration: none; }
-.examples a h2 { margin: 0 0 0.35rem; color: var(--wld-gold-ink); font-size: 1.15rem; }
-.examples a p { margin: 0; color: var(--wld-dim); font-size: 0.94rem; }
+.demo-card::after {
+  content: ""; position: absolute; inset: 0 0 auto 0; height: 1px;
+  background: linear-gradient(90deg, transparent, oklch(0.84 0.135 79 / 0.5), transparent);
+  opacity: 0; transition: opacity 0.25s;
+}
+.demo-card:hover {
+  border-color: oklch(0.84 0.135 79 / 0.45); background: var(--wld-raise2);
+  transform: translateY(-3px); text-decoration: none;
+  box-shadow: 0 26px 52px -30px oklch(0 0 0 / 0.85), 0 0 44px -24px oklch(0.84 0.135 79 / 0.5);
+}
+.demo-card:hover::after { opacity: 1; }
+.demo-card-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.9rem; }
+.demo-n { font-family: var(--wld-mono); font-size: 0.85rem; color: var(--wld-faint); letter-spacing: 0.04em; }
+.demo-tag {
+  font-family: var(--wld-mono); font-size: 0.72rem; letter-spacing: 0.03em; color: var(--wld-gold-ink);
+  padding: 0.2rem 0.58rem; border-radius: 999px;
+  border: 1px solid oklch(0.84 0.135 79 / 0.35); background: oklch(0.84 0.135 79 / 0.08);
+}
+.demo-card h2 { margin: 0 0 0.4rem; font-size: 1.2rem; color: var(--wld-ink); }
+.demo-card p { margin: 0; color: var(--wld-dim); font-size: 0.95rem; }
+
+/* featured card: two columns, carrying a live "window" mock */
+.demo-card.featured {
+  grid-column: span 2; display: grid; grid-template-columns: 1.05fr 0.95fr;
+  gap: 1.7rem; align-items: center; padding: 1.7rem 1.8rem;
+}
+.demo-card.featured h2 { font-size: 1.55rem; }
+.demo-card.featured p { font-size: 1.02rem; max-width: 34ch; }
+@media (max-width: 640px) {
+  .demo-card.featured { grid-column: auto; grid-template-columns: 1fr; }
+  .demo-card.featured .demo-mock { display: none; }
+}
+
+.demo-mock {
+  border: 1px solid var(--wld-line); border-radius: 12px; overflow: hidden;
+  background: linear-gradient(180deg, var(--wld-raise2), var(--wld-ground));
+  box-shadow: 0 22px 46px -28px oklch(0 0 0 / 0.8);
+}
+.demo-mock-chrome { display: flex; align-items: center; gap: 0.4rem; padding: 0.55rem 0.75rem; border-bottom: 1px solid var(--wld-line); }
+.demo-mock-chrome i { width: 9px; height: 9px; border-radius: 50%; background: oklch(1 0 0 / 0.14); }
+.demo-mock-chrome span { margin-left: auto; font-family: var(--wld-mono); font-size: 0.7rem; color: var(--wld-faint); }
+.demo-mock-body { padding: 0.85rem; display: flex; flex-direction: column; gap: 0.5rem; }
+.mock-msg { font-size: 0.82rem; padding: 0.5rem 0.72rem; border-radius: 11px; max-width: 88%; line-height: 1.42; }
+.mock-msg.user { align-self: flex-end; color: var(--wld-ground); background: linear-gradient(150deg, var(--wld-gold), var(--wld-gold-2)); }
+.mock-msg.bot { align-self: flex-start; background: oklch(1 0 0 / 0.04); border: 1px solid var(--wld-line); color: var(--wld-dim); }
+.mock-cursor { display: inline-block; width: 6px; height: 0.9em; vertical-align: -0.1em; margin-left: 2px; background: var(--wld-gold); animation: wld-blink 1.1s steps(1) infinite; }
+
+/* closing "build your own" card: spans the trailing columns, points at the guide */
+.demo-card.cta {
+  grid-column: span 2;
+  background:
+    radial-gradient(120% 120% at 100% 0%, oklch(0.84 0.135 79 / 0.1), transparent 60%),
+    var(--wld-raise);
+  border-color: oklch(0.84 0.135 79 / 0.3);
+}
+.demo-card.cta h2 { color: var(--wld-gold-ink); }
+.demo-card.cta p { max-width: 46ch; }
+.demo-card.cta .demo-n { color: var(--wld-gold-ink); }
+@media (max-width: 640px) { .demo-card.cta { grid-column: auto; } }
+
+/* ---- gallery footer ---- */
+.demo-foot { margin-top: 2.8rem; padding-top: 1.4rem; border-top: 1px solid var(--wld-line); display: flex; flex-wrap: wrap; gap: 1rem; justify-content: space-between; color: var(--wld-faint); font-size: 0.9rem; }
+.demo-foot a { color: var(--wld-dim); }
