@@ -1,0 +1,140 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-13T00:00:00Z",
+  "title": "Design System: WindowLLM",
+  "extensions": {
+    "colorMeta": {
+      "window-gold": { "role": "primary", "displayName": "Window Gold", "canonical": "oklch(0.84 0.135 79)", "tonalRamp": ["oklch(0.22 0.05 79)", "oklch(0.34 0.08 79)", "oklch(0.46 0.11 79)", "oklch(0.58 0.13 79)", "oklch(0.7 0.14 76)", "oklch(0.78 0.14 66)", "oklch(0.84 0.135 79)", "oklch(0.92 0.08 82)"] },
+      "gold-deep": { "role": "primary", "displayName": "Gold Deep", "canonical": "oklch(0.78 0.14 66)", "tonalRamp": ["oklch(0.2 0.05 66)", "oklch(0.32 0.08 66)", "oklch(0.44 0.11 66)", "oklch(0.56 0.13 66)", "oklch(0.66 0.14 66)", "oklch(0.72 0.14 66)", "oklch(0.78 0.14 66)", "oklch(0.88 0.09 70)"] },
+      "gold-ink": { "role": "primary", "displayName": "Gold Ink", "canonical": "oklch(0.9 0.11 82)", "tonalRamp": ["oklch(0.28 0.06 82)", "oklch(0.4 0.09 82)", "oklch(0.52 0.11 82)", "oklch(0.64 0.12 82)", "oklch(0.74 0.12 82)", "oklch(0.82 0.11 82)", "oklch(0.9 0.11 82)", "oklch(0.95 0.06 82)"] },
+      "vault-slate": { "role": "neutral", "displayName": "Vault Slate", "canonical": "oklch(0.145 0.02 265)", "tonalRamp": ["oklch(0.145 0.02 265)", "oklch(0.185 0.022 265)", "oklch(0.22 0.024 265)", "oklch(0.3 0.022 265)", "oklch(0.42 0.02 265)", "oklch(0.58 0.016 265)", "oklch(0.72 0.018 265)", "oklch(0.97 0.008 265)"] },
+      "slate-raised": { "role": "neutral", "displayName": "Slate Raised", "canonical": "oklch(0.185 0.022 265)", "tonalRamp": ["oklch(0.145 0.02 265)", "oklch(0.185 0.022 265)", "oklch(0.22 0.024 265)", "oklch(0.3 0.022 265)", "oklch(0.42 0.02 265)", "oklch(0.58 0.016 265)", "oklch(0.72 0.018 265)", "oklch(0.97 0.008 265)"] },
+      "slate-raised-2": { "role": "neutral", "displayName": "Slate Raised 2", "canonical": "oklch(0.22 0.024 265)", "tonalRamp": ["oklch(0.145 0.02 265)", "oklch(0.185 0.022 265)", "oklch(0.22 0.024 265)", "oklch(0.3 0.022 265)", "oklch(0.42 0.02 265)", "oklch(0.58 0.016 265)", "oklch(0.72 0.018 265)", "oklch(0.97 0.008 265)"] },
+      "ink": { "role": "neutral", "displayName": "Ink", "canonical": "oklch(0.97 0.008 265)", "tonalRamp": ["oklch(0.145 0.02 265)", "oklch(0.3 0.022 265)", "oklch(0.45 0.02 265)", "oklch(0.58 0.016 265)", "oklch(0.72 0.018 265)", "oklch(0.85 0.012 265)", "oklch(0.97 0.008 265)", "oklch(0.99 0.004 265)"] },
+      "dim": { "role": "neutral", "displayName": "Dim", "canonical": "oklch(0.72 0.018 265)" },
+      "faint": { "role": "neutral", "displayName": "Faint", "canonical": "oklch(0.58 0.016 265)" },
+      "hairline": { "role": "neutral", "displayName": "Hairline", "canonical": "oklch(1 0 0 / 0.09)" },
+      "signal-indigo": { "role": "secondary", "displayName": "Signal Indigo", "canonical": "oklch(0.7 0.15 274)", "tonalRamp": ["oklch(0.24 0.07 274)", "oklch(0.34 0.1 274)", "oklch(0.44 0.13 274)", "oklch(0.54 0.15 274)", "oklch(0.62 0.15 274)", "oklch(0.7 0.15 274)", "oklch(0.8 0.12 274)", "oklch(0.9 0.07 274)"] },
+      "ok-green": { "role": "tertiary", "displayName": "OK Green", "canonical": "oklch(0.8 0.14 155)", "tonalRamp": ["oklch(0.28 0.07 155)", "oklch(0.4 0.1 155)", "oklch(0.52 0.13 155)", "oklch(0.62 0.15 155)", "oklch(0.72 0.15 155)", "oklch(0.8 0.14 155)", "oklch(0.88 0.1 155)", "oklch(0.94 0.06 155)"] },
+      "alert-red": { "role": "tertiary", "displayName": "Alert Red", "canonical": "oklch(0.72 0.16 25)", "tonalRamp": ["oklch(0.26 0.09 25)", "oklch(0.38 0.13 25)", "oklch(0.5 0.17 25)", "oklch(0.6 0.19 25)", "oklch(0.72 0.16 25)", "oklch(0.8 0.13 25)", "oklch(0.88 0.09 25)", "oklch(0.94 0.05 25)"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Hero and page headlines. Heavy, tightly tracked, often with one gold-ink word." },
+      "headline": { "displayName": "Headline", "purpose": "Section headings." },
+      "title": { "displayName": "Title", "purpose": "Card and subsection titles." },
+      "body": { "displayName": "Body", "purpose": "Prose in Dim; measure capped at 60 to 75ch." },
+      "label": { "displayName": "Label / Kicker", "purpose": "The machine voice: kickers, code, API tags, identifiers, status. Always monospace." }
+    },
+    "shadows": [
+      { "name": "gold-hover-glow", "value": "0 24px 50px -28px oklch(0 0 0 / 0.85), 0 0 44px -24px oklch(0.84 0.135 79 / 0.5)", "purpose": "Interactive cards and primary buttons on hover: warmth, not just shadow." },
+      { "name": "focus-ring", "value": "0 0 0 3px oklch(0.84 0.135 79 / 0.12)", "purpose": "Inputs and controls on focus, paired with a gold-shifted border." },
+      { "name": "floating-drop", "value": "0 22px 46px -28px oklch(0 0 0 / 0.8)", "purpose": "The only resting shadow: window mock, dropdown menus, popovers." },
+      { "name": "mark-glow", "value": "0 0 0 1px oklch(0.84 0.135 79 / 0.4), 0 6px 20px -8px oklch(0.84 0.135 79 / 0.6)", "purpose": "The brand mark, so the W reads as a lit tile." }
+    ],
+    "motion": [
+      { "name": "ease-out-expo", "value": "cubic-bezier(0.22, 1, 0.36, 1)", "purpose": "Default easing for lifts and state transitions. Ease out, no bounce." },
+      { "name": "dur-fast", "value": "0.18s", "purpose": "Hover lifts, border and background shifts." },
+      { "name": "dur-med", "value": "0.25s", "purpose": "Shadow and glow reveals." }
+    ],
+    "breakpoints": [
+      { "name": "card-stack", "value": "640px" },
+      { "name": "hero-stack", "value": "860px" },
+      { "name": "sidebar-drop", "value": "900px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one warm object in a view: the primary call to action.",
+      "html": "<button class=\"ds-btn-primary\">Set up your vault</button>",
+      "css": ".ds-btn-primary { background: linear-gradient(150deg, oklch(0.84 0.135 79), oklch(0.78 0.14 66)); color: oklch(0.145 0.02 265); font-weight: 600; font-size: 0.96rem; padding: 0.72rem 1.3rem; border: none; border-radius: 10px; cursor: pointer; transition: transform 0.18s cubic-bezier(0.22,1,0.36,1), box-shadow 0.2s; } .ds-btn-primary:hover { transform: translateY(-2px); box-shadow: 0 16px 40px -12px oklch(0.84 0.135 79 / 0.8); } .ds-btn-primary:focus-visible { outline: none; box-shadow: 0 0 0 3px oklch(0.84 0.135 79 / 0.35); }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "The quieter of two adjacent actions. Border, no glow.",
+      "html": "<button class=\"ds-btn-ghost\">For developers</button>",
+      "css": ".ds-btn-ghost { background: oklch(1 0 0 / 0.02); color: oklch(0.97 0.008 265); font-weight: 600; font-size: 0.96rem; padding: 0.72rem 1.3rem; border: 1px solid oklch(1 0 0 / 0.09); border-radius: 10px; cursor: pointer; transition: border-color 0.2s, background 0.2s; } .ds-btn-ghost:hover { border-color: oklch(1 0 0 / 0.2); background: oklch(1 0 0 / 0.05); }"
+    },
+    {
+      "name": "Search Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Text field on a raised surface; gold ring on focus, no layout shift.",
+      "html": "<input class=\"ds-input\" placeholder=\"Search and select model...\">",
+      "css": ".ds-input { width: 100%; background: oklch(0.185 0.022 265); color: oklch(0.97 0.008 265); font: inherit; font-size: 0.98rem; padding: 0.8rem 1rem; border: 1px solid oklch(1 0 0 / 0.09); border-radius: 10px; } .ds-input::placeholder { color: oklch(0.58 0.016 265); } .ds-input:focus { outline: none; border-color: oklch(0.84 0.135 79 / 0.6); box-shadow: 0 0 0 3px oklch(0.84 0.135 79 / 0.12); }"
+    },
+    {
+      "name": "Kicker",
+      "kind": "custom",
+      "refersTo": "kicker",
+      "description": "The signal eyebrow: monospace label with a live pulsing gold dot.",
+      "html": "<span class=\"ds-kicker\">window.llm · live demos</span>",
+      "css": ".ds-kicker { display: inline-flex; align-items: center; gap: 0.5rem; font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 0.78rem; letter-spacing: 0.02em; color: oklch(0.9 0.11 82); } .ds-kicker::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: oklch(0.84 0.135 79); box-shadow: 0 0 10px 1px oklch(0.84 0.135 79); animation: ds-pulse 2.6s ease-in-out infinite; } @keyframes ds-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }"
+    },
+    {
+      "name": "API Tag",
+      "kind": "chip",
+      "refersTo": "tag",
+      "description": "Monospace tag naming an API surface or capability.",
+      "html": "<span class=\"ds-tag\">session.stream()</span>",
+      "css": ".ds-tag { display: inline-block; font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 0.76rem; color: oklch(0.72 0.018 265); padding: 0.28rem 0.6rem; border: 1px solid oklch(1 0 0 / 0.09); border-radius: 7px; background: oklch(1 0 0 / 0.02); }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Raised surface, flat at rest, lifts and glows gold on hover.",
+      "html": "<a class=\"ds-card\" href=\"#\"><div class=\"ds-card-top\"><span class=\"ds-card-n\">01</span></div><h3 class=\"ds-card-h\">Chat</h3><p class=\"ds-card-p\">A conversation that remembers context and streams every reply.</p></a>",
+      "css": ".ds-card { display: block; text-decoration: none; background: oklch(0.185 0.022 265); border: 1px solid oklch(1 0 0 / 0.09); border-radius: 16px; padding: 1.4rem 1.5rem; transition: transform 0.2s cubic-bezier(0.22,1,0.36,1), border-color 0.18s, box-shadow 0.25s, background 0.18s; } .ds-card:hover { transform: translateY(-3px); border-color: oklch(0.84 0.135 79 / 0.45); background: oklch(0.22 0.024 265); box-shadow: 0 26px 52px -30px oklch(0 0 0 / 0.85), 0 0 44px -24px oklch(0.84 0.135 79 / 0.5); } .ds-card-n { font-family: ui-monospace, Menlo, monospace; font-size: 0.85rem; color: oklch(0.58 0.016 265); } .ds-card-h { margin: 0.6rem 0 0.4rem; font-size: 1.2rem; font-weight: 650; letter-spacing: -0.01em; color: oklch(0.97 0.008 265); } .ds-card-p { margin: 0; font-size: 0.95rem; line-height: 1.5; color: oklch(0.72 0.018 265); }"
+    },
+    {
+      "name": "The Window (signature)",
+      "kind": "custom",
+      "refersTo": "window",
+      "description": "The brand's defining element: a literal browser window with chrome and a framed, lit interior. Used as hero mock and featured-card preview.",
+      "html": "<div class=\"ds-window\"><div class=\"ds-window-chrome\"><i></i><i></i><i></i><span>chat</span></div><div class=\"ds-window-body\"><div class=\"ds-msg user\">Summarize WindowLLM in one line.</div><div class=\"ds-msg bot\">A browser API that lets any site use your own AI, with your keys sealed.<span class=\"ds-caret\"></span></div></div></div>",
+      "css": ".ds-window { max-width: 320px; border: 1px solid oklch(1 0 0 / 0.09); border-radius: 12px; overflow: hidden; background: linear-gradient(180deg, oklch(0.22 0.024 265), oklch(0.145 0.02 265)); box-shadow: 0 22px 46px -28px oklch(0 0 0 / 0.8); } .ds-window-chrome { display: flex; align-items: center; gap: 0.4rem; padding: 0.55rem 0.75rem; border-bottom: 1px solid oklch(1 0 0 / 0.09); } .ds-window-chrome i { width: 9px; height: 9px; border-radius: 50%; background: oklch(1 0 0 / 0.14); } .ds-window-chrome span { margin-left: auto; font-family: ui-monospace, Menlo, monospace; font-size: 0.7rem; color: oklch(0.58 0.016 265); } .ds-window-body { padding: 0.85rem; display: flex; flex-direction: column; gap: 0.5rem; } .ds-msg { font-size: 0.82rem; padding: 0.5rem 0.72rem; border-radius: 11px; max-width: 88%; line-height: 1.42; } .ds-msg.user { align-self: flex-end; color: oklch(0.145 0.02 265); background: linear-gradient(150deg, oklch(0.84 0.135 79), oklch(0.78 0.14 66)); } .ds-msg.bot { align-self: flex-start; color: oklch(0.72 0.018 265); background: oklch(1 0 0 / 0.04); border: 1px solid oklch(1 0 0 / 0.09); } .ds-caret { display: inline-block; width: 6px; height: 0.9em; vertical-align: -0.1em; margin-left: 2px; background: oklch(0.84 0.135 79); animation: ds-blink 1.1s steps(1) infinite; } @keyframes ds-blink { 0%,50% { opacity: 1; } 50.01%,100% { opacity: 0; } }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Lit Window",
+    "overview": "WindowLLM is a warm light falling through a dark blueprint. The product's whole idea is a window a site opens onto the user's own AI, so the interface makes that window literal: a dark slate ground, a faint engineering grid, and warm gold light spilling in from the top-left as if through glass. Gold is the light inside the vault; everything else is the room around it, kept quiet so the light reads. The system is dark by conviction, not fashion, the scene of a developer evaluating a sovereignty tool: focused, nocturnal, wanting to trust what they see. Confidence comes from precision, not decoration. It rejects the generic AI-SaaS look and rejects dependency itself: no web fonts, no third-party requests, the sovereignty it sells applied to itself.",
+    "keyCharacteristics": [
+      "Warm gold on deep blue-slate, dark by default.",
+      "The browser window as a recurring literal motif (grid, light, chrome, frame).",
+      "Flat surfaces at rest; light and lift only on interaction.",
+      "System sans for substance, monospace for signals (kickers, code, API tags).",
+      "Self-contained: no external fonts, scripts, or network calls."
+    ],
+    "rules": [
+      { "name": "The One Warm Signal Rule", "body": "Gold is the only warm hue on the screen and it stays rare: primary action, brand, and the single live accent, not decoration. If two gold things compete for attention in one view, one is wrong.", "section": "colors" },
+      { "name": "The Tinted Neutral Rule", "body": "No pure black, no pure white. Every neutral is tinted toward the blue-slate hue (265) at low chroma. #000 and #fff are forbidden.", "section": "colors" },
+      { "name": "The Machine-Voice Rule", "body": "Monospace means literal machinery: code, an API call, a kicker, an identifier. Never set prose or a heading in mono; never set an API name in the sans.", "section": "typography" },
+      { "name": "The Gold Emphasis Rule", "body": "Emphasis inside a heading is one word recolored to Gold Ink, not italic, not underline, never a gradient across the text.", "section": "typography" },
+      { "name": "The Flat-Until-Touched Rule", "body": "A resting surface has a border and a tonal step, never a shadow. Shadow and lift appear only on hover, focus, or genuine float.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do keep gold rare and singular: one primary action, one live accent per view.",
+      "Do tint every neutral toward the blue-slate hue (265) at low chroma; use OKLCH for all color.",
+      "Do set kickers, code, API names, and identifiers in monospace, and prose in the system sans.",
+      "Do keep resting surfaces flat with a hairline border; reveal shadow and lift only on hover, focus, or genuine float.",
+      "Do reach for the window motif (chrome bar, grid, warm light) when a surface should feel like the product.",
+      "Do vary spacing and card size for rhythm; differentiate cards with numbers, tags, and real copy.",
+      "Do keep everything self-contained: system fonts, inline SVG, no third-party requests."
+    ],
+    "donts": [
+      "Don't use em dashes in UI copy, or double hyphens. Use commas, colons, semicolons, periods, or parentheses.",
+      "Don't load web fonts, external scripts, or any third-party asset.",
+      "Don't ship the generic AI-SaaS look: no purple-to-blue hero gradients, no neon-on-black, no glassmorphism as a default surface.",
+      "Don't build a wall of identical icon-heading-text cards. Differentiate, feature, and vary.",
+      "Don't use background-clip: text gradient headings; emphasize with a single Gold Ink word instead.",
+      "Don't use #000 or #fff, or an untinted gray anywhere.",
+      "Don't put a colored border-left or border-right stripe on cards, callouts, or alerts; use a full hairline border or a tinted fill.",
+      "Don't give a resting card a drop shadow, or let a second gold element compete with the primary action."
+    ]
+  }
+}
