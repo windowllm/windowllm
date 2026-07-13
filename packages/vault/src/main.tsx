@@ -14,6 +14,9 @@ import { getVaultEncryption, getVaultStorage, type StoredProviderConfig, type Si
 import { getHandler, initializeHandler } from './services/handler.js';
 import { getVaultAPI, type VaultAPI } from './services/api.js';
 
+const isExtensionPage = /^(?:chrome|moz|safari-web)-extension:$/.test(window.location.protocol)
+  || document.querySelector('script[src*="extension-entry"]') !== null;
+
 // Expose VaultAPI globally for testing
 declare global {
   interface Window {
@@ -22,7 +25,7 @@ declare global {
 }
 
 // In dev/test mode, expose VaultAPI on window for E2E testing
-if (import.meta.env.DEV || import.meta.env.MODE === 'test') {
+if (!isExtensionPage && (import.meta.env.DEV || import.meta.env.MODE === 'test')) {
   window.vaultAPI = getVaultAPI();
 }
 
@@ -55,12 +58,13 @@ const PROVIDER_INFO: Record<ProviderType, { name: string; description: string; b
   custom: { name: 'Custom', description: 'OpenAI-compatible API', browserDirect: false },
 };
 
-interface AppProps {
+interface VaultDashboardProps {
   readonly onNavigateHome?: () => void;
   readonly onSignOut?: () => void;
+  readonly runtime?: 'web' | 'extension';
 }
 
-function App({ onNavigateHome, onSignOut }: AppProps) {
+export function VaultDashboard({ onNavigateHome, onSignOut, runtime = 'web' }: VaultDashboardProps) {
   const [providers, setProviders] = useState<StoredProviderConfig[]>([]);
   const [showAddProvider, setShowAddProvider] = useState(false);
   const api = getVaultAPI();
@@ -105,8 +109,8 @@ function App({ onNavigateHome, onSignOut }: AppProps) {
     <div className="min-h-screen bg-background">
       {/* Header */}
       <header className="border-b sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container max-w-4xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
+        <div className="container max-w-4xl mx-auto px-4 sm:px-6 py-4">
+          <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <button
                 type="button"
@@ -119,18 +123,25 @@ function App({ onNavigateHome, onSignOut }: AppProps) {
               </button>
               <div>
                 <h1 className="text-xl font-bold">WindowLLM</h1>
-                <p className="text-sm text-muted-foreground">Your AI, Your Rules</p>
+                <p className="hidden text-sm text-muted-foreground sm:block">Your AI, Your Rules</p>
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 sm:gap-3">
               <Badge variant={isConfigured ? 'success' : 'secondary'}>
-                {isConfigured ? 'Ready' : 'Setup Required'}
+                {isConfigured ? 'Ready' : (runtime === 'extension' ? 'Setup' : 'Setup Required')}
               </Badge>
               {onSignOut && (
-                <Button variant="ghost" size="sm" onClick={onSignOut} title="Lock vault and return to home" className="gap-1.5">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onSignOut}
+                  aria-label="Lock vault"
+                  title="Lock vault"
+                  className="gap-1.5"
+                >
                   <LogOut className="h-4 w-4" />
-                  Sign out
+                  <span className="hidden sm:inline">Sign out</span>
                 </Button>
               )}
             </div>
@@ -139,7 +150,7 @@ function App({ onNavigateHome, onSignOut }: AppProps) {
       </header>
 
       {/* Main Content */}
-      <main className="container max-w-4xl mx-auto px-6 py-8">
+      <main className="container max-w-4xl mx-auto px-4 py-6 sm:px-6 sm:py-8">
         <Tabs defaultValue="providers" className="space-y-6">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="providers" className="gap-2">
@@ -179,6 +190,7 @@ function App({ onNavigateHome, onSignOut }: AppProps) {
                   onUpdate={handleUpdateProvider}
                   onDelete={handleDeleteProvider}
                   onTest={handleTestProvider}
+                  runtime={runtime}
                 />
               ))}
             </div>
@@ -188,6 +200,7 @@ function App({ onNavigateHome, onSignOut }: AppProps) {
               <AddProviderCard
                 onAdd={handleAddProvider}
                 onCancel={() => setShowAddProvider(false)}
+                runtime={runtime}
               />
             ) : (
               <Button
@@ -213,7 +226,7 @@ function App({ onNavigateHome, onSignOut }: AppProps) {
 
       {/* Footer */}
       <footer className="border-t mt-auto">
-        <div className="container max-w-4xl mx-auto px-6 py-4 flex items-center justify-between text-sm text-muted-foreground">
+        <div className="container max-w-4xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between text-sm text-muted-foreground">
           <span>WindowLLM v1.0.0</span>
           <a
             href="https://github.com/windowllm/windowllm"
@@ -235,9 +248,10 @@ interface ProviderCardProps {
   onUpdate: (provider: StoredProviderConfig) => void;
   onDelete: (id: string) => void;
   onTest: (id: string) => Promise<boolean>;
+  runtime: 'web' | 'extension';
 }
 
-function ProviderCard({ provider, onUpdate, onDelete, onTest }: ProviderCardProps) {
+function ProviderCard({ provider, onUpdate, onDelete, onTest, runtime }: ProviderCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<boolean | null>(null);
@@ -272,8 +286,8 @@ function ProviderCard({ provider, onUpdate, onDelete, onTest }: ProviderCardProp
   return (
     <Card className={provider.enabled ? 'border-green-500/30' : ''}>
       <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center justify-between gap-3 sm:justify-start">
             <ProviderLogo type={provider.type} size={28} />
             <div>
               <CardTitle className="text-lg">{provider.name}</CardTitle>
@@ -299,8 +313,12 @@ function ProviderCard({ provider, onUpdate, onDelete, onTest }: ProviderCardProp
               <div className="text-sm">
                 <p className="font-medium text-yellow-500">Local provider</p>
                 <p className="text-muted-foreground mt-1">
-                  Ollama runs on your machine. In iframe mode the vault can only reach it if you set
-                  <code className="mx-1">OLLAMA_ORIGINS</code>; otherwise install the browser extension.
+                  {runtime === 'extension' ? (
+                    'Ollama runs on your machine and is reached directly by this extension.'
+                  ) : (
+                    <>Ollama runs on your machine. In iframe mode the vault can only reach it if you set
+                      <code className="mx-1">OLLAMA_ORIGINS</code>; otherwise install the browser extension.</>
+                  )}
                 </p>
               </div>
             </div>
@@ -341,7 +359,7 @@ function ProviderCard({ provider, onUpdate, onDelete, onTest }: ProviderCardProp
             />
           </div>
 
-          <CardFooter className="flex items-center justify-between p-0 pt-4">
+          <CardFooter className="flex flex-col items-stretch gap-4 p-0 pt-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2">
               <Button variant="secondary" onClick={handleTest} disabled={testing}>
                 {testing ? (
@@ -360,8 +378,8 @@ function ProviderCard({ provider, onUpdate, onDelete, onTest }: ProviderCardProp
               )}
             </div>
 
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-2 mr-4">
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <div className="mr-auto flex items-center gap-2 sm:mr-4">
                 <Switch
                   checked={provider.enabled}
                   onCheckedChange={(checked) => onUpdate({ ...provider, enabled: checked })}
@@ -383,9 +401,10 @@ function ProviderCard({ provider, onUpdate, onDelete, onTest }: ProviderCardProp
 interface AddProviderCardProps {
   onAdd: (config: Omit<StoredProviderConfig, 'id' | 'createdAt' | 'updatedAt'>) => void;
   onCancel: () => void;
+  runtime: 'web' | 'extension';
 }
 
-function AddProviderCard({ onAdd, onCancel }: AddProviderCardProps) {
+function AddProviderCard({ onAdd, onCancel, runtime }: AddProviderCardProps) {
   const [type, setType] = useState<ProviderType>('openai');
   const [apiKey, setApiKey] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
@@ -409,7 +428,7 @@ function AddProviderCard({ onAdd, onCancel }: AddProviderCardProps) {
         <CardDescription>Connect to an AI provider</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid grid-cols-5 gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
           {(Object.keys(PROVIDER_INFO) as ProviderType[]).map((key) => (
             <Button
               key={key}
@@ -423,7 +442,17 @@ function AddProviderCard({ onAdd, onCancel }: AddProviderCardProps) {
           ))}
         </div>
 
-        {info.browserDirect ? (
+        {runtime === 'extension' ? (
+          <div className="flex gap-3 p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/30">
+            <Check className="h-5 w-5 text-emerald-500 flex-shrink-0 mt-0.5" />
+            <div className="text-sm">
+              <p className="font-medium text-emerald-500">Runs through the extension</p>
+              <p className="text-muted-foreground mt-1">
+                {info.name} requests stay inside the WindowLLM extension, including local and custom endpoints.
+              </p>
+            </div>
+          </div>
+        ) : info.browserDirect ? (
           <div className="flex gap-3 p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/30">
             <Check className="h-5 w-5 text-emerald-500 flex-shrink-0 mt-0.5" />
             <div className="text-sm">
@@ -532,7 +561,7 @@ function PermissionsTab() {
               {permissions.map((p) => (
                 <div
                   key={p.origin}
-                  className="flex items-center justify-between p-4 rounded-lg border"
+                  className="flex flex-col items-stretch gap-3 p-4 rounded-lg border sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div>
                     <h3 className="font-medium">{p.origin}</h3>
@@ -629,7 +658,7 @@ function SettingsTab() {
           <CardDescription>Configure access controls</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-4">
             <div className="space-y-0.5">
               <Label>Require approval for new sites</Label>
               <p className="text-sm text-muted-foreground">
@@ -650,7 +679,7 @@ function SettingsTab() {
           <CardDescription>Control usage across all sites</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="requests-per-minute">Requests per minute</Label>
               <Input
@@ -708,7 +737,7 @@ function SettingsTab() {
           {/* Export */}
           <div className="space-y-2">
             <Label htmlFor="export-pw">Export</Label>
-            <div className="flex gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row">
               <Input
                 id="export-pw"
                 type="password"
@@ -989,7 +1018,7 @@ function VaultApp({ onNavigateHome }: { readonly onNavigateHome?: () => void }) 
 
   // If vault is unlocked, show the main app with home and sign-out actions.
   if (isUnlocked) {
-    return <App onNavigateHome={onNavigateHome} onSignOut={handleSignOut} />;
+    return <VaultDashboard onNavigateHome={onNavigateHome} onSignOut={handleSignOut} />;
   }
 
   // Not unlocked. First-time visitors get the full landing with the create-vault
@@ -1192,7 +1221,7 @@ function ConsentPopup({ origin }: { origin: string }) {
 // crypto.subtle (used to encrypt vault keys) only exists in a secure context.
 // If the page loaded over plain HTTP on a real host, upgrade to HTTPS before
 // doing anything, so key setup can't fail with a cryptic "reading 'importKey'".
-if (!window.isSecureContext && window.location.protocol === 'http:') {
+if (!isExtensionPage && !window.isSecureContext && window.location.protocol === 'http:') {
   window.location.replace(window.location.href.replace(/^http:/, 'https:'));
 }
 
@@ -1246,7 +1275,7 @@ function Site() {
 
 // Mount the app
 const root = document.getElementById('root');
-if (root) {
+if (root && !isExtensionPage) {
   if (isIframe) {
     initializeHandler();
     console.log('WindowLLM Vault: Running in iframe mode');
