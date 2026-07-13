@@ -84,7 +84,7 @@ npm run build --workspace=@windowllm/vault
 
 npm run typecheck           # tsc --noEmit across workspaces
 npm test                    # unit tests (vitest) across workspaces
-npm run test:e2e            # Playwright e2e (Chromium) against local dev servers
+npm run test:e2e            # Playwright e2e (Chromium + Firefox) against local dev servers
 npm run test:extension:webkit  # headless Safari-extension test (macOS + Xcode CLT)
 
 # Local dev (HTTPS via mkcert; run `npm run setup:https` once):
@@ -142,7 +142,8 @@ npm run dev:examples        # the examples/ demos
 - **Unit** (`vitest`): adapters (mock responses), vault storage/crypto, extension
   background message auth.
 - **E2E** (`playwright`, `tests/e2e/`): full client↔vault flow against local dev
-  servers (Chromium). This is also the durable coverage of the shared extension logic.
+  servers in Chromium and Firefox. These exercise the iframe/client path; they do
+  **not** load the Chrome or Firefox browser extensions.
 - **Safari extension** (`scripts/wkwebext-test/`): a small Swift `.app` loads the
   built extension into `WKWebExtensionController` (the same WebExtension engine Safari
   embeds) and asserts `window.llm.provider === "extension"` — headless, no VM, no
@@ -151,6 +152,58 @@ npm run dev:examples        # the examples/ demos
 - The Safari extension build is currently **ad-hoc signed**; enabling an unsigned
   extension headlessly in real Safari is not automatable, which is why the WebKit
   host test exists.
+
+### E2E Setup and Execution
+
+From a fresh checkout, install dependencies, create the local HTTPS certificates,
+install the Playwright browsers, and build the workspace dependencies in order:
+
+```bash
+npm install
+npm run setup:https
+npx playwright install chromium firefox
+
+npm run build --workspace=@windowllm/types --workspace=@windowllm/protocol --workspace=@windowllm/adapters
+npm run build --workspace=@windowllm/client
+```
+
+`npm run setup:https` uses `mkcert`, installs its local CA when needed, and writes
+the certificate and key to `.certs/`. The Playwright web servers expect these files;
+without them Vite starts over HTTP while Playwright waits for HTTPS.
+
+Run the complete iframe/client E2E suite with:
+
+```bash
+npm run test:e2e
+```
+
+`playwright.config.ts` automatically starts the vault at
+`https://windowllm.localhost:3100` and the cross-origin test page at
+`https://test.localhost:3101`, then runs every test against Chromium and Firefox.
+The ports must be free. In sandboxed agent environments, run this command outside
+the sandbox because the suite must bind both ports and launch browser processes.
+
+Useful focused runs:
+
+```bash
+npx playwright test --project=chromium
+npx playwright test --project=firefox
+npx playwright test tests/e2e/client/
+npx playwright test tests/e2e/vault/
+```
+
+The Playwright suite does not load the Chrome or Firefox extension packages. There
+is currently no extension-loaded E2E suite for those browsers. On macOS 15.4+ with
+Xcode 16.3+ command-line tools, run the Safari/WebKit extension injection smoke test
+separately:
+
+```bash
+npm run test:extension:webkit
+```
+
+This loads the real built extension into `WKWebExtensionController` and verifies
+that it injects the extension-backed `window.llm` API. It does not cover Safari UI,
+extension installation/signing, popup/options workflows, or a live provider request.
 
 ## Code Style
 
