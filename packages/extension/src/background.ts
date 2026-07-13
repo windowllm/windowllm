@@ -13,6 +13,12 @@ import { createAnthropicAdapter, createOpenAIAdapter, createOpenRouterAdapter, c
 import type { ProviderAdapter, NormalizedRequest } from '@windowllm/adapters';
 import type { LLMModel, Message } from '@windowllm/types';
 
+declare const __WINDOWLLM_EXTENSION_E2E__: boolean;
+declare const __WINDOWLLM_EXTENSION_E2E_URL__: string;
+declare const browser: typeof chrome;
+
+const extensionBrowser = typeof browser !== 'undefined' ? browser : chrome;
+
 const STORAGE_PREFIX = 'windowllm:';
 const PROVIDERS_KEY = `${STORAGE_PREFIX}providers`;
 const ENCRYPTION_KEY_KEY = `${STORAGE_PREFIX}key`;
@@ -21,6 +27,39 @@ const SETTINGS_KEY = `${STORAGE_PREFIX}settings`;
 const CRYPTO_SALT_KEY = `${STORAGE_PREFIX}crypto_salt`;
 const CRYPTO_CHECK_KEY = `${STORAGE_PREFIX}crypto_check`;
 const PENDING_POPUP_KEY = `${STORAGE_PREFIX}pending_popup`;
+
+/**
+ * Seed an isolated extension profile for the cross-browser E2E harness.
+ * The flag is replaced at build time and is false in every production build.
+ */
+async function seedExtensionE2EProfile(): Promise<void> {
+  if (typeof __WINDOWLLM_EXTENSION_E2E__ === 'undefined' || !__WINDOWLLM_EXTENSION_E2E__) return;
+
+  const now = Date.now();
+  await extensionBrowser.storage.local.set({
+    [PROVIDERS_KEY]: JSON.stringify([{
+      id: 'extension-e2e-ollama',
+      type: 'ollama',
+      name: 'Extension E2E Provider',
+      enabled: true,
+      baseUrl: __WINDOWLLM_EXTENSION_E2E_URL__,
+      defaultModel: 'extension-e2e',
+      createdAt: now,
+      updatedAt: now,
+    }]),
+    [PERMISSIONS_KEY]: JSON.stringify([{
+      origin: __WINDOWLLM_EXTENSION_E2E_URL__,
+      capabilities: ['chat', 'streaming'],
+      grantedAt: now,
+    }]),
+    [SETTINGS_KEY]: JSON.stringify({
+      requireApproval: true,
+      autoApproveOrigins: [],
+    }),
+  });
+}
+
+const extensionE2EProfileReady = seedExtensionE2EProfile();
 
 // Auto-lock timeout (30 minutes in milliseconds)
 const AUTO_LOCK_TIMEOUT_MS = 30 * 60 * 1000;
@@ -54,7 +93,7 @@ interface SitePermission {
  * Get all stored permissions
  */
 async function getPermissions(): Promise<SitePermission[]> {
-  const result = await chrome.storage.local.get(PERMISSIONS_KEY) as Record<string, string | undefined>;
+  const result = await extensionBrowser.storage.local.get(PERMISSIONS_KEY) as Record<string, string | undefined>;
   const data = result[PERMISSIONS_KEY];
   if (!data) return [];
   try {
@@ -99,7 +138,7 @@ async function grantPermission(origin: string): Promise<void> {
     permissions.push(newPermission);
   }
 
-  await chrome.storage.local.set({ [PERMISSIONS_KEY]: JSON.stringify(permissions) });
+  await extensionBrowser.storage.local.set({ [PERMISSIONS_KEY]: JSON.stringify(permissions) });
 }
 
 /**
@@ -108,14 +147,14 @@ async function grantPermission(origin: string): Promise<void> {
 async function revokePermission(origin: string): Promise<void> {
   const permissions = await getPermissions();
   const filtered = permissions.filter(p => p.origin !== origin);
-  await chrome.storage.local.set({ [PERMISSIONS_KEY]: JSON.stringify(filtered) });
+  await extensionBrowser.storage.local.set({ [PERMISSIONS_KEY]: JSON.stringify(filtered) });
 }
 
 /**
  * Check if require approval is enabled (default: true)
  */
 async function getRequireApproval(): Promise<boolean> {
-  const result = await chrome.storage.local.get(SETTINGS_KEY) as Record<string, string | undefined>;
+  const result = await extensionBrowser.storage.local.get(SETTINGS_KEY) as Record<string, string | undefined>;
   const data = result[SETTINGS_KEY];
   if (!data) return true;
   try {
@@ -130,7 +169,7 @@ async function getRequireApproval(): Promise<boolean> {
  * Check if secure encryption is set up (passphrase was created)
  */
 async function isSecureEncryptionSetUp(): Promise<boolean> {
-  const result = await chrome.storage.local.get([CRYPTO_SALT_KEY, CRYPTO_CHECK_KEY]);
+  const result = await extensionBrowser.storage.local.get([CRYPTO_SALT_KEY, CRYPTO_CHECK_KEY]);
   return result[CRYPTO_SALT_KEY] != null && result[CRYPTO_CHECK_KEY] != null;
 }
 
@@ -249,7 +288,7 @@ setInterval(checkAutoLock, 60 * 1000);
  * Used when secure passphrase-based encryption isn't set up.
  */
 async function getEncryptionKey(): Promise<string | null> {
-  const result = await chrome.storage.local.get(ENCRYPTION_KEY_KEY) as Record<string, string | undefined>;
+  const result = await extensionBrowser.storage.local.get(ENCRYPTION_KEY_KEY) as Record<string, string | undefined>;
   return result[ENCRYPTION_KEY_KEY] || null;
 }
 
@@ -352,21 +391,21 @@ interface StoredSession {
  * with "Session not found". (chrome.storage.session is MV3-only; guard it.)
  */
 async function persistSession(session: Session): Promise<void> {
-  if (!chrome.storage.session) return;
+  if (!extensionBrowser.storage.session) return;
   const stored: StoredSession = {
     id: session.id,
     origin: session.origin,
     modelId: session.model.id,
     systemPrompt: session.systemPrompt,
   };
-  await chrome.storage.session.set({ [SESSION_STORE_PREFIX + session.id]: stored });
+  await extensionBrowser.storage.session.set({ [SESSION_STORE_PREFIX + session.id]: stored });
 }
 
 /** Rebuild an in-memory session (with a live adapter) from persisted metadata. */
 async function restoreSession(sessionId: string, origin: string): Promise<Session | null> {
-  if (!chrome.storage.session) return null;
+  if (!extensionBrowser.storage.session) return null;
   const key = SESSION_STORE_PREFIX + sessionId;
-  const stored = (await chrome.storage.session.get(key))[key] as StoredSession | undefined;
+  const stored = (await extensionBrowser.storage.session.get(key))[key] as StoredSession | undefined;
   if (!stored || stored.origin !== origin) return null;
 
   const models = await getModels(); // ensures adapters are initialized
@@ -391,7 +430,7 @@ async function restoreSession(sessionId: string, origin: string): Promise<Sessio
  * Load providers from storage and decrypt API keys
  */
 async function loadProviders(): Promise<StoredProviderConfig[]> {
-  const result = await chrome.storage.local.get(PROVIDERS_KEY) as Record<string, string | undefined>;
+  const result = await extensionBrowser.storage.local.get(PROVIDERS_KEY) as Record<string, string | undefined>;
   const providersJson = result[PROVIDERS_KEY];
   if (!providersJson) {
     return [];
@@ -607,7 +646,7 @@ async function handleCompletion(
         accumulated += chunk.content;
 
         if (tabId != null) {
-          chrome.tabs.sendMessage(tabId, {
+          extensionBrowser.tabs.sendMessage(tabId, {
             type: 'stream_chunk',
             sessionId: payload.sessionId,
             chunk: {
@@ -629,7 +668,7 @@ async function handleCompletion(
 
     // Send done with usage
     if (tabId != null) {
-      chrome.tabs.sendMessage(tabId, {
+      extensionBrowser.tabs.sendMessage(tabId, {
         type: 'stream_chunk',
         sessionId: payload.sessionId,
         chunk: {
@@ -659,6 +698,23 @@ async function handleModelsList(): Promise<{ models: LLMModel[] }> {
   return { models };
 }
 
+async function handleModelsGet(payload: { id?: string }): Promise<{ model: LLMModel | null }> {
+  const models = await getModels();
+  return { model: models.find(model => model.id === payload.id) ?? null };
+}
+
+async function handleModelsMatch(
+  payload: { requirements?: { capabilities?: { required?: string[] } } },
+): Promise<{ models: LLMModel[] }> {
+  const requiredCapabilities = payload.requirements?.capabilities?.required ?? [];
+  const models = await getModels();
+  return {
+    models: models.filter(model => requiredCapabilities.every(capability =>
+      Boolean(model.capabilities[capability as keyof typeof model.capabilities])
+    )),
+  };
+}
+
 /**
  * Message types that expose privileged vault operations. These must ONLY be
  * accepted from the extension's own pages (popup / options) — never from a
@@ -686,13 +742,13 @@ const PROTECTED_MESSAGES = new Set(['session_init', 'completion', 'models_list']
  * page can spoof — the URL is set by the browser, not the message payload.
  */
 function isExtensionPageSender(sender: chrome.runtime.MessageSender): boolean {
-  const extensionBase = chrome.runtime.getURL('');
+  const extensionBase = extensionBrowser.runtime.getURL('');
   return typeof sender.url === 'string' && sender.url.startsWith(extensionBase);
 }
 
 /** Read the current pending popup request, if any. */
 async function readPendingPopup(): Promise<PendingPopupRequest | null> {
-  const json = (await chrome.storage.local.get(PENDING_POPUP_KEY) as Record<string, string | undefined>)[PENDING_POPUP_KEY];
+  const json = (await extensionBrowser.storage.local.get(PENDING_POPUP_KEY) as Record<string, string | undefined>)[PENDING_POPUP_KEY];
   if (!json) return null;
   try {
     return JSON.parse(json) as PendingPopupRequest;
@@ -702,10 +758,11 @@ async function readPendingPopup(): Promise<PendingPopupRequest | null> {
 }
 
 // Listen for messages from content scripts
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+extensionBrowser.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   const handleAsync = async () => {
     try {
+      await extensionE2EProfileReady;
       const fromExtensionPage = isExtensionPageSender(sender);
 
       // Reject privileged operations that do not come from our own UI pages.
@@ -749,7 +806,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           return { type: 'pong', timestamp: Date.now() };
 
         case 'get_config': {
-          const result = await chrome.storage.local.get([PROVIDERS_KEY]);
+          const result = await extensionBrowser.storage.local.get([PROVIDERS_KEY]);
           return { type: 'config', data: result };
         }
 
@@ -758,6 +815,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         case 'models_list':
           return await handleModelsList();
+
+        case 'models_get':
+          return await handleModelsGet(message.payload ?? {});
+
+        case 'models_match':
+          return await handleModelsMatch(message.payload ?? {});
 
         case 'completion':
           return await handleCompletion(message.payload, sender, origin!);
@@ -769,8 +832,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             const session = sessions.get(sessionId) ?? await restoreSession(sessionId, origin);
             if (session && session.origin === origin) {
               sessions.delete(sessionId);
-              if (chrome.storage.session) {
-                await chrome.storage.session.remove(SESSION_STORE_PREFIX + sessionId);
+              if (extensionBrowser.storage.session) {
+                await extensionBrowser.storage.session.remove(SESSION_STORE_PREFIX + sessionId);
               }
             }
           }
@@ -825,6 +888,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           return perm?.capabilities?.includes(cap) ?? false;
         }
 
+        case 'permission_request': {
+          if (!origin) return { error: 'Unable to determine request origin' };
+          if (await hasPermission(origin)) return { granted: true };
+          return { requiresConsent: true, origin };
+        }
+
+        case 'permission_revoke': {
+          if (!origin) return { error: 'Unable to determine request origin' };
+          await revokePermission(origin);
+          return { granted: false };
+        }
+
         case 'vault_status': {
           const isSetUp = await isSecureEncryptionSetUp();
           const isLocked = await isVaultLocked();
@@ -857,13 +932,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
               timestamp: Date.now(),
             };
 
-            await chrome.storage.local.set({ [PENDING_POPUP_KEY]: JSON.stringify(pendingRequest) });
+            await extensionBrowser.storage.local.set({ [PENDING_POPUP_KEY]: JSON.stringify(pendingRequest) });
 
             // Try to open the extension popup
             let popupOpened = false;
-            if (typeof chrome.action?.openPopup === 'function') {
+            if (typeof extensionBrowser.action?.openPopup === 'function') {
               try {
-                await chrome.action.openPopup();
+                await extensionBrowser.action.openPopup();
                 popupOpened = true;
               } catch (popupError) {
                 console.warn('[WindowLLM] action.openPopup() failed:', popupError);
@@ -880,7 +955,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         case 'popup_result':
           // Handle result from popup and notify the originating tab
           try {
-            const pendingJson = (await chrome.storage.local.get(PENDING_POPUP_KEY) as Record<string, string | undefined>)[PENDING_POPUP_KEY];
+            const pendingJson = (await extensionBrowser.storage.local.get(PENDING_POPUP_KEY) as Record<string, string | undefined>)[PENDING_POPUP_KEY];
             if (!pendingJson) {
               return { error: 'No pending popup request' };
             }
@@ -888,11 +963,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             const pending = JSON.parse(pendingJson) as PendingPopupRequest;
 
             // Clear the pending request
-            await chrome.storage.local.remove(PENDING_POPUP_KEY);
+            await extensionBrowser.storage.local.remove(PENDING_POPUP_KEY);
 
             // Send result to the originating tab's content script
             if (pending.tabId) {
-              chrome.tabs.sendMessage(pending.tabId, {
+              extensionBrowser.tabs.sendMessage(pending.tabId, {
                 type: 'popup_result',
                 mode: pending.type,
                 result: message.payload?.result,
@@ -909,7 +984,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         case 'get_pending_popup':
           // Get pending popup request (called by popup on load)
           try {
-            const pendingJson = (await chrome.storage.local.get(PENDING_POPUP_KEY) as Record<string, string | undefined>)[PENDING_POPUP_KEY];
+            const pendingJson = (await extensionBrowser.storage.local.get(PENDING_POPUP_KEY) as Record<string, string | undefined>)[PENDING_POPUP_KEY];
             if (!pendingJson) {
               return { pending: null };
             }
@@ -918,7 +993,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
             // Check if request is stale (older than 5 minutes)
             if (Date.now() - pending.timestamp > 5 * 60 * 1000) {
-              await chrome.storage.local.remove(PENDING_POPUP_KEY);
+              await extensionBrowser.storage.local.remove(PENDING_POPUP_KEY);
               return { pending: null };
             }
 
@@ -942,7 +1017,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 // Listen for storage changes to reload adapters
-chrome.storage.onChanged.addListener((changes, areaName) => {
+extensionBrowser.storage.onChanged.addListener((changes, areaName) => {
   if (areaName === 'local' && changes[PROVIDERS_KEY]) {
     cachedModels = null;
     initializeAdapters();
@@ -950,11 +1025,11 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 });
 
 // Initialize on install
-chrome.runtime.onInstalled.addListener((details) => {
+extensionBrowser.runtime.onInstalled.addListener((details) => {
   console.log('[WindowLLM] Extension installed:', details.reason);
 
   if (details.reason === 'install') {
-    chrome.runtime.openOptionsPage();
+    extensionBrowser.runtime.openOptionsPage();
   }
 });
 

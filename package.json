@@ -11,6 +11,9 @@
     "build:extension": "npm run build --workspace=@windowllm/vault && npm run build:chrome --workspace=@windowllm/extension && cp packages/extension/manifest.json packages/extension/dist/ && cp -r packages/extension/icons packages/extension/dist/",
     "build:extension:firefox": "npm run build --workspace=@windowllm/vault && npm run build:firefox --workspace=@windowllm/extension && cp packages/extension/manifest.firefox.json packages/extension/dist/manifest.json && cp -r packages/extension/icons packages/extension/dist/",
     "build:extension:safari": "npm run build --workspace=@windowllm/vault && npm run build:safari --workspace=@windowllm/extension",
+    "build:extension:e2e:chrome": "npm run build --workspace=@windowllm/vault && WINDOWLLM_EXTENSION_E2E=1 npm run build:chrome --workspace=@windowllm/extension",
+    "build:extension:e2e:firefox": "npm run build --workspace=@windowllm/vault && WINDOWLLM_EXTENSION_E2E=1 npm run build:firefox --workspace=@windowllm/extension",
+    "build:extension:e2e:safari": "npm run build --workspace=@windowllm/vault && WINDOWLLM_EXTENSION_E2E=1 npm run build:safari:web --workspace=@windowllm/extension",
     "dev": "npm run dev --workspace=@windowllm/vault",
     "dev:examples": "npx vite --config examples/vite.config.ts",
     "dev:test-vault": "VITE_PORT=3100 npm run dev --workspace=@windowllm/vault",
@@ -19,7 +22,11 @@
     "test": "npm test --workspaces --if-present",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "test:extension:webkit": "npm run build --workspace=@windowllm/vault && npm run build:safari:web --workspace=@windowllm/extension && ./scripts/wkwebext-test/run.sh",
+    "test:e2e:extension": "npm run test:e2e:extension:chrome && npm run test:e2e:extension:firefox && npm run test:e2e:extension:safari",
+    "test:e2e:extension:chrome": "npm run build:extension:e2e:chrome && playwright test --config=playwright.extension.config.ts",
+    "test:e2e:extension:firefox": "npm run build:extension:e2e:firefox && node tests/extension/firefox/run.mjs",
+    "test:e2e:extension:safari": "npm run build:extension:e2e:safari && ./scripts/wkwebext-test/run.sh",
+    "test:extension:webkit": "npm run test:e2e:extension:safari",
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },
@@ -42,6 +49,7 @@
     "node": ">=18.0.0"
   },
   "devDependencies": {
-    "@playwright/test": "^1.57.0"
+    "@playwright/test": "^1.57.0",
+    "web-ext": "^8.10.0"
   }
 }

@@ -8,8 +8,10 @@
  * using "world": "MAIN" for Chrome, with fallback injection for Firefox/Safari.
  */
 
-// Firefox/Safari expose a `browser` global; it isn't in @types/chrome.
-declare const browser: unknown;
+// Firefox exposes the Promise-based `browser` namespace. Chrome and Safari
+// use the compatible `chrome` fallback.
+declare const browser: typeof chrome;
+const extensionBrowser = typeof browser !== 'undefined' ? browser : chrome;
 
 // Fallback injection for browsers that don't support "world": "MAIN"
 // Chrome 102+ supports it via manifest, Firefox and Safari need manual injection
@@ -33,7 +35,11 @@ if (isFirefox || isSafari) {
 
 // Listen for requests from inject.js (MAIN world)
 window.addEventListener('windowllm:request', (async (event: CustomEvent) => {
-  const { id, type, payload } = event.detail;
+  const { id, type, payload } = JSON.parse(event.detail as string) as {
+    id: number;
+    type: string;
+    payload: unknown;
+  };
 
   try {
     let response;
@@ -43,19 +49,19 @@ window.addEventListener('windowllm:request', (async (event: CustomEvent) => {
       // Content script can provide extension URL directly
       const origin = (payload as { origin: string }).origin;
       const encodedOrigin = encodeURIComponent(origin);
-      response = { url: chrome.runtime.getURL(`popup.html?consent=true&origin=${encodedOrigin}`) };
+      response = { url: extensionBrowser.runtime.getURL(`popup.html?consent=true&origin=${encodedOrigin}`) };
     } else if (type === 'get_unlock_url') {
       // Return extension popup URL for vault unlock
-      response = { url: chrome.runtime.getURL('popup.html?unlock=true') };
+      response = { url: extensionBrowser.runtime.getURL('popup.html?unlock=true') };
     } else if (type === 'open_popup') {
       // Forward to background script to open the extension popup
-      response = await chrome.runtime.sendMessage({
+      response = await extensionBrowser.runtime.sendMessage({
         type: 'open_popup',
         payload,
       });
     } else {
       // Forward to background script
-      response = await chrome.runtime.sendMessage({
+      response = await extensionBrowser.runtime.sendMessage({
         type,
         payload,
       });
@@ -63,39 +69,39 @@ window.addEventListener('windowllm:request', (async (event: CustomEvent) => {
 
     // Send response back to inject.js
     window.dispatchEvent(new CustomEvent('windowllm:response', {
-      detail: { id, success: true, data: response }
+      detail: JSON.stringify({ id, success: true, data: response })
     }));
   } catch (error) {
     console.error('[WindowLLM Content] Background error:', error);
     // Send error back to inject.js
     window.dispatchEvent(new CustomEvent('windowllm:response', {
-      detail: {
+      detail: JSON.stringify({
         id,
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error'
-      }
+      })
     }));
   }
 }) as unknown as EventListener);
 
 // Handle messages from background
-chrome.runtime.onMessage.addListener((message) => {
+extensionBrowser.runtime.onMessage.addListener((message) => {
   if (message.type === 'stream_chunk') {
     // Forward stream chunk to inject.js
     window.dispatchEvent(new CustomEvent('windowllm:stream', {
-      detail: {
+      detail: JSON.stringify({
         sessionId: message.sessionId,
         chunk: message.chunk,
-      }
+      })
     }));
   } else if (message.type === 'popup_result') {
     // Forward popup result to inject.js
     window.dispatchEvent(new CustomEvent('windowllm:popup_result', {
-      detail: {
+      detail: JSON.stringify({
         mode: message.mode,
         result: message.result,
         origin: message.origin,
-      }
+      })
     }));
   }
   return false;

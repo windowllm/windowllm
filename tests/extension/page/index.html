@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WindowLLM extension E2E</title>
+  <script>
+    window.__windowllmAtFirstScript = typeof window.llm !== 'undefined';
+  </script>
+</head>
+<body>
+  <h1>WindowLLM extension E2E</h1>
+  <pre id="results">Running…</pre>
+  <script type="module">
+    import { runWindowLLMContract } from '/window-llm-contract.mjs';
+    import { runExtensionContract } from '/extension-contract.mjs';
+
+    const runner = new URLSearchParams(location.search).get('runner') || 'unknown';
+    const shared = await runWindowLLMContract({
+      expectedProvider: 'extension',
+      expectedModelId: 'ollama/extension-e2e',
+      expectedCompletionText: 'Extension E2E response',
+    });
+    const extension = await runExtensionContract();
+    const tests = [...shared, ...extension];
+    const result = {
+      done: true,
+      runner,
+      userAgent: navigator.userAgent,
+      passed: tests.filter(test => test.status === 'pass').length,
+      failed: tests.filter(test => test.status === 'fail').length,
+      tests,
+    };
+
+    window.__windowllmExtensionE2E = result;
+    document.querySelector('#results').textContent = JSON.stringify(result, null, 2);
+    document.title = result.failed === 0 ? 'PASS WindowLLM extension E2E' : 'FAIL WindowLLM extension E2E';
+
+    await fetch('/results', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(result),
+      keepalive: true,
+    }).catch(() => {});
+  </script>
+</body>
+</html>

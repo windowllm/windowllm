@@ -85,7 +85,7 @@ npm run build --workspace=@windowllm/vault
 npm run typecheck           # tsc --noEmit across workspaces
 npm test                    # unit tests (vitest) across workspaces
 npm run test:e2e            # Playwright e2e (Chromium + Firefox) against local dev servers
-npm run test:extension:webkit  # headless Safari-extension test (macOS + Xcode CLT)
+npm run test:e2e:extension  # real extensions in Chrome/Chromium, Firefox, and Safari/WebKit
 
 # Local dev (HTTPS via mkcert; run `npm run setup:https` once):
 npm run dev                 # vault at windowllm.localhost:3000
@@ -143,12 +143,17 @@ npm run dev:examples        # the examples/ demos
   background message auth.
 - **E2E** (`playwright`, `tests/e2e/`): full client↔vault flow against local dev
   servers in Chromium and Firefox. These exercise the iframe/client path; they do
-  **not** load the Chrome or Firefox browser extensions.
-- **Safari extension** (`scripts/wkwebext-test/`): a small Swift `.app` loads the
-  built extension into `WKWebExtensionController` (the same WebExtension engine Safari
-  embeds) and asserts `window.llm.provider === "extension"` — headless, no VM, no
-  signing. This **replaced** a removed tart macOS-VM harness (which could never enable
-  the unsigned extension and only exercised the iframe fallback).
+  not load extensions.
+- **Extension E2E** (`tests/extension/`): one browser-side API contract runs through
+  the real Chrome/Chromium MV3, Firefox MV2, and Safari/WebKit extension runtimes.
+  A deterministic local Ollama-compatible server covers model discovery, sessions,
+  completion, and streaming without credentials. Extension-only checks cover early
+  injection, the hardened global, background routing, Chrome's worker, popup, and
+  options page.
+- **Safari host** (`scripts/wkwebext-test/`): a small Swift `.app` loads the built
+  extension into `WKWebExtensionController`, the same WebExtension engine Safari
+  embeds. It is headless and does not require signing or enabling an extension in
+  Safari. This replaced a tart VM harness that only exercised the iframe fallback.
 - The Safari extension build is currently **ad-hoc signed**; enabling an unsigned
   extension headlessly in real Safari is not automatable, which is why the WebKit
   host test exists.
@@ -192,18 +197,27 @@ npx playwright test tests/e2e/client/
 npx playwright test tests/e2e/vault/
 ```
 
-The Playwright suite does not load the Chrome or Firefox extension packages. There
-is currently no extension-loaded E2E suite for those browsers. On macOS 15.4+ with
-Xcode 16.3+ command-line tools, run the Safari/WebKit extension injection smoke test
-separately:
+Run every real-extension suite sequentially with:
 
 ```bash
-npm run test:extension:webkit
+npm run test:e2e:extension
 ```
 
-This loads the real built extension into `WKWebExtensionController` and verifies
-that it injects the extension-backed `window.llm` API. It does not cover Safari UI,
-extension installation/signing, popup/options workflows, or a live provider request.
+Or focus on one runtime:
+
+```bash
+npm run test:e2e:extension:chrome
+npm run test:e2e:extension:firefox
+npm run test:e2e:extension:safari
+```
+
+The Chrome command intentionally uses Playwright's bundled Chromium because branded
+Chrome removed the flags needed to side-load an unpacked extension. Firefox uses
+Mozilla's `web-ext` to install the built MV2 package temporarily. Safari requires
+macOS 15.4+ and Xcode 16.3+ command-line tools and runs via
+`WKWebExtensionController`. These commands bind `127.0.0.1:3199` and launch browser
+processes, so run them outside restricted sandboxes. The Safari runner does not cover
+Safari browser chrome, `.app`/`.appex` packaging, signing, or the enable flow.
 
 ## Code Style
 

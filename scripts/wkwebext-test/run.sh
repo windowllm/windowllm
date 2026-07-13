@@ -1,7 +1,7 @@
 #!/bin/bash
 # Headless WebKit test of the WindowLLM Safari extension via WKWebExtensionController.
-# Proves the real extension code injects window.llm (provider === "extension") inside
-# Apple's WebKit engine — no Safari, no enable toggle, no signing, no TCC.
+# Runs the shared API contract and extension-specific checks through the real
+# extension inside Apple's WebKit engine — no Safari UI, enable toggle, or TCC.
 set -euo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -15,7 +15,7 @@ BIN="$DIR/.build/host"
 if [ ! -f "$EXT_DIR/manifest.json" ] || [ ! -f "$EXT_DIR/content.js" ]; then
   echo "[run] building extension dist (safari manifest)…"
   ( cd "$ROOT/packages/extension" \
-    && npm run build:with-ui \
+    && WINDOWLLM_EXTENSION_E2E=1 npm run build:with-ui \
     && cp manifest.safari.json dist/manifest.json \
     && cp -r icons dist/ )
 fi
@@ -54,21 +54,21 @@ if [ ! -x "$BIN" ] || [ "$DIR/host.swift" -nt "$BIN" ]; then
   codesign --force --sign - "$APP" 2>/dev/null || true
 fi
 
-# 3. Serve the test page over http (content_scripts match http://*/*).
-python3 -m http.server "$PORT" --directory "$DIR/page" >/dev/null 2>&1 &
+# 3. Serve the shared contract page and deterministic Ollama-compatible API.
+PORT="$PORT" node "$ROOT/tests/extension/server.mjs" >"$DIR/.build/server.log" 2>&1 &
 SRV=$!
 trap 'kill $SRV 2>/dev/null || true' EXIT
-until curl -s "http://localhost:$PORT/" >/dev/null 2>&1; do sleep 0.2; done
+until curl -s "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; do sleep 0.2; done
 
 # 4. Run the host test.
-echo "[run] loading extension into WKWebExtensionController and probing window.llm…"
+echo "[run] loading extension into WKWebExtensionController and running contracts…"
 set +e
-OUT="$("$BIN" "$EXT_DIR" "http://localhost:$PORT/" "$TIMEOUT")"
+OUT="$("$BIN" "$EXT_DIR" "http://127.0.0.1:$PORT/?runner=safari" "$TIMEOUT")"
 CODE=$?
 set -e
 echo "[result] $OUT"
 if [ "$CODE" -eq 0 ]; then
-  echo "[run] PASS — window.llm.provider === \"extension\" (real extension code injected in WebKit)"
+  echo "[run] PASS — shared API and extension runtime contracts passed in WebKit"
 else
   echo "[run] FAIL (exit $CODE)"
 fi

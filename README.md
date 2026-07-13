@@ -314,30 +314,29 @@ npm run dev:test-vault     # Vault at windowllm.localhost:3100
 npm run dev:test-page      # Test page at test.localhost:3101
 ```
 
-### Safari Extension Testing (headless WebKit)
+### Cross-browser Extension E2E
 
-The Safari extension is tested headlessly against Apple's real WebKit WebExtension
-engine — the same runtime Safari uses to run extensions — via
-`WKWebExtensionController`. No Safari, no VM, no signing, no enable toggle.
+The extension has a shared browser-side contract that runs through the real extension
+runtime in Chrome/Chromium, Firefox, and Safari/WebKit. It covers document-start
+injection, the public API, permissions, model discovery, sessions, completion,
+streaming, and background routing against a deterministic local Ollama-compatible
+server.
 
 ```bash
-npm run test:extension:webkit
+npm run test:e2e:extension          # all three runtimes
+npm run test:e2e:extension:chrome   # unpacked MV3 in Playwright Chromium
+npm run test:e2e:extension:firefox  # temporary MV2 add-on via web-ext
+npm run test:e2e:extension:safari   # WKWebExtensionController on macOS
 ```
 
-This builds the extension (`dist/`), loads it into a `WKWebExtensionController`,
-attaches it to an offscreen `WKWebView`, and asserts that the extension's content
-script injects `window.llm` with `provider === "extension"` plus the full API
-surface. It runs in ~1 second and only requires macOS + Xcode command-line tools
-(so it works on standard CI macOS runners).
+Playwright uses its bundled Chromium because branded Chrome no longer accepts the
+flags required to side-load unpacked extensions. The Safari runner uses Apple's real
+WebKit WebExtension engine with no VM, signing, or enable toggle; it requires macOS
+15.4+ and Xcode 16.3+ command-line tools.
 
 See [`scripts/wkwebext-test/README.md`](scripts/wkwebext-test/README.md) for
-implementation details and the scope boundary — it verifies the extension's
-web-facing behavior, not Safari's `.appex` packaging/signing shell or a live LLM
-round-trip.
-
-> **Note:** cross-browser shared logic (background/content/inject scripts and the
-> iframe fallback path used when no extension is present) is covered by the
-> Playwright e2e suite (`npm run test:e2e`), which runs against Chromium.
+the Safari implementation details and scope boundary. The runners test the built web
+extension, not Safari's `.appex` packaging/signing shell or browser enable UI.
 
 ## Security Model
 

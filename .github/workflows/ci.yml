@@ -1,6 +1,6 @@
 name: CI
 
-# PR + push checks: typecheck, unit tests, and the headless Safari-extension test.
+# PR + push checks: typecheck, unit tests, and real extension-runtime E2E tests.
 on:
   push:
     branches: [main]
@@ -28,11 +28,26 @@ jobs:
       - run: npm run typecheck
       - run: npm test
 
+  extension-browsers:
+    name: Chrome & Firefox extensions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build --workspace=@windowllm/types --workspace=@windowllm/protocol --workspace=@windowllm/adapters
+      - run: npm run build --workspace=@windowllm/client
+      - run: npx playwright install --with-deps chromium firefox
+      - run: npm run test:e2e:extension:chrome
+      - run: npm run test:e2e:extension:firefox
+
   extension-webkit:
     name: Safari extension (headless WebKit)
-    # Runs the real extension in Apple's WKWebExtension engine (same one Safari
-    # embeds) and asserts window.llm.provider === "extension". Requires the public
-    # WKWebExtension API: macOS 15.4+ / Xcode 16.3+ (bump the runner if unavailable).
+    # Runs shared API and extension-specific contracts in Apple's real
+    # WKWebExtension engine. Requires macOS 15.4+ / Xcode 16.3+.
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v5

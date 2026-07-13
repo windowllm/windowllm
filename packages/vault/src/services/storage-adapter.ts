@@ -47,8 +47,9 @@ export class LocalStorageAdapter implements StorageAdapter {
  */
 export class ChromeStorageAdapter implements StorageAdapter {
   private get chromeStorage() {
-    // Access chrome dynamically to avoid type errors in non-extension builds
-    return (globalThis as any).chrome?.storage?.local;
+    // Firefox's Promise API lives on `browser`; Chrome/Safari use `chrome`.
+    return (globalThis as any).browser?.storage?.local
+      ?? (globalThis as any).chrome?.storage?.local;
   }
 
   async get(key: string): Promise<string | null> {
@@ -79,7 +80,8 @@ export class ChromeStorageAdapter implements StorageAdapter {
  */
 export function createStorageAdapter(): StorageAdapter {
   // Check if we're in a Chrome extension context
-  const chromeStorage = (globalThis as any).chrome?.storage?.local;
+  const chromeStorage = (globalThis as any).browser?.storage?.local
+    ?? (globalThis as any).chrome?.storage?.local;
   if (chromeStorage) {
     return new ChromeStorageAdapter();
   }

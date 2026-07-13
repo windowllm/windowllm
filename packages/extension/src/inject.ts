@@ -130,7 +130,7 @@ function handleUnlockResponse(unlocked: boolean) {
 
 // Listen for popup results from content script (forwarded from background)
 window.addEventListener('windowllm:popup_result', ((event: CustomEvent) => {
-  const { mode, result } = event.detail;
+  const { mode, result } = JSON.parse(event.detail as string) as { mode: string; result: boolean };
   if (mode === 'consent') {
     handleConsentResponse(result === true);
   } else if (mode === 'unlock') {
@@ -182,7 +182,7 @@ function sendToContentScriptRaw(type: string, payload: unknown): Promise<unknown
     pendingRequests.set(id, { resolve, reject });
 
     window.dispatchEvent(new CustomEvent('windowllm:request', {
-      detail: { id, type, payload }
+      detail: JSON.stringify({ id, type, payload })
     }));
 
     // Timeout after 30 seconds
@@ -197,7 +197,12 @@ function sendToContentScriptRaw(type: string, payload: unknown): Promise<unknown
 
 // Listen for responses from content script
 window.addEventListener('windowllm:response', ((event: CustomEvent) => {
-  const { id, success, data, error } = event.detail;
+  const { id, success, data, error } = JSON.parse(event.detail as string) as {
+    id: number;
+    success: boolean;
+    data?: unknown;
+    error?: string;
+  };
   const pending = pendingRequests.get(id);
   if (pending) {
     pendingRequests.delete(id);
@@ -297,18 +302,15 @@ class ExtensionSession {
 
     // Set up streaming listener
     const chunks: unknown[] = [];
-    let streamDone = false;
     let resolveNext: (() => void) | null = null;
 
     const streamHandler = ((event: CustomEvent) => {
-      if (event.detail.sessionId === this.id) {
-        chunks.push(event.detail.chunk);
+      const detail = JSON.parse(event.detail as string) as { sessionId: string; chunk: { type: string } };
+      if (detail.sessionId === this.id) {
+        chunks.push(detail.chunk);
         if (resolveNext) {
           resolveNext();
           resolveNext = null;
-        }
-        if (event.detail.chunk.type === 'done') {
-          streamDone = true;
         }
       }
     }) as EventListener;
@@ -326,7 +328,7 @@ class ExtensionSession {
 
       // Yield chunks as they arrive
       let accumulated = '';
-      while (!streamDone) {
+      while (true) {
         if (chunks.length > 0) {
           const chunk = chunks.shift() as { type: string; text?: string; accumulated?: string; result?: unknown };
           if (chunk.type === 'text') {
@@ -410,6 +412,18 @@ class ExtensionEmbeddingSession {
   }
 }
 
+type ExtensionPermissionState = 'granted' | 'prompt';
+
+class ExtensionPermissionStatus extends EventTarget {
+  readonly state: ExtensionPermissionState;
+  onchange: ((this: ExtensionPermissionStatus, event: Event) => void) | null = null;
+
+  constructor(state: ExtensionPermissionState) {
+    super();
+    this.state = state;
+  }
+}
+
 /**
  * WindowLLM API implementation
  */
@@ -420,16 +434,23 @@ const windowLLM = {
 
   permissions: {
     async query(descriptor: { name: string }) {
-      const result = await sendToContentScript('permission_query', descriptor);
-      return result;
+      const granted = await sendToContentScript('permission_query', descriptor);
+      return new ExtensionPermissionStatus(granted === true ? 'granted' : 'prompt');
     },
     async request(descriptor: { name: string }) {
-      const result = await sendToContentScript('permission_request', descriptor);
-      return result;
+      const result = await sendToContentScript('permission_request', descriptor) as {
+        granted?: boolean;
+        error?: string;
+      };
+      if (result.error) throw new Error(result.error);
+      return new ExtensionPermissionStatus(result.granted ? 'granted' : 'prompt');
     },
     async revoke(descriptor: { name: string }) {
-      const result = await sendToContentScript('permission_revoke', descriptor);
-      return result;
+      const result = await sendToContentScript('permission_revoke', descriptor) as {
+        error?: string;
+      };
+      if (result.error) throw new Error(result.error);
+      return new ExtensionPermissionStatus('prompt');
     },
   },
 

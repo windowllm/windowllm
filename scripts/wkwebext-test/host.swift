@@ -2,12 +2,12 @@
 //
 // Loads the built extension folder (dist/) into a real WKWebExtensionController
 // (Apple's WebKit WebExtension engine, same one Safari uses), attaches it to an
-// offscreen WKWebView, navigates to a test page, and reports window.llm's identity.
+// offscreen WKWebView, navigates to the shared contract page, and reports its result.
 //
 // This exercises the ACTUAL extension code (content.js → inlined inject.js → the
 // window.llm MAIN-world object) with NO Safari, NO enable toggle, NO signing, NO TCC.
 //
-// Exit code 0 == window.llm.provider === "extension" (extension injection proven).
+// Exit code 0 means the real extension injected and every browser contract passed.
 //
 // Build: swiftc -swift-version 5 -O -o host host.swift -framework WebKit -framework AppKit
 
@@ -108,7 +108,8 @@ final class Harness: NSObject, WKWebExtensionControllerDelegate, WKWebExtensionW
           provider: (window.llm && window.llm.provider) || null,
           version: (window.llm && window.llm.version) || null,
           hasRequestSession: !!(window.llm && window.llm.requestSession),
-          keys: window.llm ? Object.keys(window.llm) : []
+          keys: window.llm ? Object.keys(window.llm) : [],
+          contract: window.__windowllmExtensionE2E || null
         })
         """
         wv.evaluateJavaScript(js) { [weak self] result, error in
@@ -125,11 +126,23 @@ final class Harness: NSObject, WKWebExtensionControllerDelegate, WKWebExtensionW
             }
             let provider = obj["provider"] as? String
             vlog("poll \(self.pollCount): rs=\(obj["rs"] ?? "?") llm=\(obj["type"] ?? "?") provider=\(provider ?? "nil")")
-            if provider == "extension" {
+            guard let contract = obj["contract"] as? [String: Any],
+                  contract["done"] as? Bool == true else { return }
+
+            let failed = (contract["failed"] as? NSNumber)?.intValue ?? -1
+            if provider == "extension" && failed == 0 {
                 self.didEvaluate = true
                 var out = obj
                 out["ok"] = true
                 emit(out, exitCode: 0)
+            } else {
+                self.didEvaluate = true
+                var out = obj
+                out["ok"] = false
+                out["error"] = provider == "extension"
+                    ? "extension contract reported \(failed) failure(s)"
+                    : "window.llm provider was not extension"
+                emit(out, exitCode: 1)
             }
         }
     }

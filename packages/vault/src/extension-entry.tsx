@@ -208,8 +208,10 @@ function UnlockPopup({ onUnlock, onCancel }: UnlockPopupProps) {
 }
 
 async function sendRuntimeMessage<T>(message: unknown): Promise<T | null> {
-  if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) return null;
-  return chrome.runtime.sendMessage(message) as Promise<T>;
+  const runtime = (globalThis as any).browser?.runtime
+    ?? (globalThis as any).chrome?.runtime;
+  if (!runtime?.sendMessage) return null;
+  return runtime.sendMessage(message) as Promise<T>;
 }
 
 function ExtensionRoot() {
