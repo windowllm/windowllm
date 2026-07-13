@@ -68,7 +68,6 @@
   /* shell */
   .shell { width: min(1160px, 100% - 2rem); margin-inline: auto; }
   .layout { display: grid; grid-template-columns: 232px minmax(0, 1fr); gap: clamp(1.5rem, 4vw, 3.5rem); padding-block: clamp(2rem, 5vw, 3.5rem); }
-  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } .toc { display: none; } }
 
   /* sidebar toc */
   .toc { position: sticky; top: 5rem; align-self: start; max-height: calc(100vh - 6rem); overflow-y: auto; font-size: 0.9rem; }
@@ -77,6 +76,31 @@
   .toc a { display: block; padding: 0.32rem 0.7rem; border-left: 2px solid transparent; color: var(--wl-dim); border-radius: 0 6px 6px 0; }
   .toc a:hover { color: var(--wl-ink); background: oklch(1 0 0 / 0.03); text-decoration: none; }
   .toc a.active { color: var(--wl-gold-ink); border-left-color: var(--wl-gold); background: oklch(0.84 0.135 79 / 0.08); }
+
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; padding-top: 0; }
+    .toc {
+      position: sticky; top: 3.55rem; z-index: 15;
+      display: flex; align-items: center; gap: 0.65rem;
+      width: calc(100% + 2rem); margin-inline: -1rem; padding: 0.45rem 1rem;
+      max-height: none; overflow: hidden;
+      background: oklch(0.145 0.02 265 / 0.92);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--wl-line);
+    }
+    .toc .toc-title { flex: 0 0 auto; margin: 0; font-size: 0.65rem; }
+    .toc ol {
+      min-width: 0; overflow-x: auto; flex-direction: row; gap: 0.15rem;
+      scrollbar-width: none; scroll-snap-type: x proximity;
+    }
+    .toc ol::-webkit-scrollbar { display: none; }
+    .toc li { flex: 0 0 auto; margin: 0; scroll-snap-align: start; }
+    .toc a {
+      padding: 0.55rem 0.6rem; border-left: 0; border-bottom: 2px solid transparent;
+      border-radius: 6px; white-space: nowrap;
+    }
+    .toc a.active { border-left-color: transparent; border-bottom-color: var(--wl-gold); }
+  }
 
   /* content */
   main { min-width: 0; }
@@ -680,7 +704,21 @@ status.onchange = () => {
       if (id === current) return;
       current = id;
       links.forEach(function (a) { a.classList.remove('active'); });
-      if (byId[id]) byId[id].classList.add('active');
+      if (byId[id]) {
+        var active = byId[id];
+        active.classList.add('active');
+
+        // Keep the active section visible in the horizontal mobile contents bar.
+        if (window.matchMedia('(max-width: 900px)').matches) {
+          var list = active.closest('ol');
+          var listRect = list.getBoundingClientRect();
+          var activeRect = active.getBoundingClientRect();
+          var activeLeft = activeRect.left - listRect.left + list.scrollLeft;
+          var left = activeLeft - (list.clientWidth - active.offsetWidth) / 2;
+          var reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+          list.scrollTo({ left: Math.max(0, left), behavior: reducedMotion ? 'auto' : 'smooth' });
+        }
+      }
     }
 
     var observer = new IntersectionObserver(function (entries) {
