@@ -5,7 +5,11 @@ import { readFileSync, writeFileSync } from 'fs';
 // Build background separately as IIFE since Safari service workers don't support ES modules well
 import { build } from 'vite';
 
-const extensionE2EDefines = {
+const extensionVersion = process.env.WINDOWLLM_EXTENSION_VERSION
+  ?? JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf8')).version;
+
+const extensionDefines = {
+  __WINDOWLLM_EXTENSION_VERSION__: JSON.stringify(extensionVersion),
   __WINDOWLLM_EXTENSION_E2E__: JSON.stringify(process.env.WINDOWLLM_EXTENSION_E2E === '1'),
   __WINDOWLLM_EXTENSION_E2E_URL__: JSON.stringify(
     process.env.WINDOWLLM_EXTENSION_E2E_URL || 'http://127.0.0.1:3199',
@@ -15,7 +19,7 @@ const extensionE2EDefines = {
 async function buildBackground() {
   await build({
     configFile: false,
-    define: extensionE2EDefines,
+    define: extensionDefines,
     build: {
       outDir: 'dist',
       emptyOutDir: false,
@@ -35,7 +39,7 @@ async function buildBackground() {
 // Firefox/Safari use the fallback in content.ts which loads via script.src
 
 export default defineConfig({
-  define: extensionE2EDefines,
+  define: extensionDefines,
   build: {
     outDir: 'dist',
     emptyOutDir: true,

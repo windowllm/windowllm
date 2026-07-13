@@ -7,6 +7,8 @@
  * This approach works across Chrome, Firefox, and Safari.
  */
 
+declare const __WINDOWLLM_EXTENSION_VERSION__: string;
+
 // Message ID counter for request/response correlation
 let messageId = 0;
 
@@ -428,7 +430,7 @@ class ExtensionPermissionStatus extends EventTarget {
  * WindowLLM API implementation
  */
 const windowLLM = {
-  version: '0.1.0',
+  version: __WINDOWLLM_EXTENSION_VERSION__,
   available: true,
   provider: 'extension' as const,
 

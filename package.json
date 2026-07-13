@@ -8,8 +8,8 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
-    "build:extension": "npm run build --workspace=@windowllm/vault && npm run build:chrome --workspace=@windowllm/extension && cp packages/extension/manifest.json packages/extension/dist/ && cp -r packages/extension/icons packages/extension/dist/",
-    "build:extension:firefox": "npm run build --workspace=@windowllm/vault && npm run build:firefox --workspace=@windowllm/extension && cp packages/extension/manifest.firefox.json packages/extension/dist/manifest.json && cp -r packages/extension/icons packages/extension/dist/",
+    "build:extension": "npm run build --workspace=@windowllm/vault && npm run build:chrome --workspace=@windowllm/extension",
+    "build:extension:firefox": "npm run build --workspace=@windowllm/vault && npm run build:firefox --workspace=@windowllm/extension",
     "build:extension:safari": "npm run build --workspace=@windowllm/vault && npm run build:safari --workspace=@windowllm/extension",
     "build:extension:e2e:chrome": "npm run build --workspace=@windowllm/vault && WINDOWLLM_EXTENSION_E2E=1 npm run build:chrome --workspace=@windowllm/extension",
     "build:extension:e2e:firefox": "npm run build --workspace=@windowllm/vault && WINDOWLLM_EXTENSION_E2E=1 npm run build:firefox --workspace=@windowllm/extension",

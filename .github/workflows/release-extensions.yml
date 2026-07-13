@@ -1,0 +1,194 @@
+name: Release browser extensions
+
+on:
+  schedule:
+    - cron: '17 8 * * *'
+  push:
+    tags:
+      - 'v[0-9]*.[0-9]*.[0-9]*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: extension-release-${{ github.ref_type == 'tag' && github.ref_name || 'nightly' }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+jobs:
+  metadata:
+    name: Release metadata
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
+      asset_suffix: ${{ steps.release.outputs.asset_suffix }}
+      stable: ${{ steps.release.outputs.stable }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - id: release
+        name: Select release version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            version="${GITHUB_REF_NAME#v}"
+            if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Version tags must have the form v1.2.3" >&2
+              exit 1
+            fi
+            tag="$GITHUB_REF_NAME"
+            asset_suffix="$GITHUB_REF_NAME"
+            stable=true
+          else
+            package_version="$(node -p "require('./packages/extension/package.json').version")"
+            IFS=. read -r major minor _ <<< "$package_version"
+            year="$(date -u +%Y)"
+            day_of_year="$(date -u +%-j)"
+            nightly_build="$(( (year - 2020) * 366 + day_of_year ))"
+            version="${major}.${minor}.${nightly_build}"
+            tag=nightly
+            asset_suffix=nightly
+            stable=false
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "asset_suffix=$asset_suffix" >> "$GITHUB_OUTPUT"
+          echo "stable=$stable" >> "$GITHUB_OUTPUT"
+
+  chromium-firefox:
+    name: Package Chrome and Firefox
+    needs: metadata
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - name: Build shared packages
+        run: |
+          npm run build --workspace=@windowllm/types --workspace=@windowllm/protocol --workspace=@windowllm/adapters
+          npm run build --workspace=@windowllm/client
+
+      - name: Package Chrome
+        env:
+          WINDOWLLM_EXTENSION_VERSION: ${{ needs.metadata.outputs.version }}
+          ASSET_SUFFIX: ${{ needs.metadata.outputs.asset_suffix }}
+        run: |
+          npm run build:extension
+          mkdir -p release-assets
+          cd packages/extension/dist
+          zip -qr "../../../release-assets/windowllm-chrome-${ASSET_SUFFIX}.zip" .
+
+      - name: Package Firefox
+        env:
+          WINDOWLLM_EXTENSION_VERSION: ${{ needs.metadata.outputs.version }}
+          ASSET_SUFFIX: ${{ needs.metadata.outputs.asset_suffix }}
+        run: |
+          npm run build:extension:firefox
+          npx --no-install web-ext lint --source-dir packages/extension/dist
+          npx --no-install web-ext build \
+            --source-dir packages/extension/dist \
+            --artifacts-dir release-assets \
+            --filename "windowllm-firefox-${ASSET_SUFFIX}.zip" \
+            --overwrite-dest
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chromium-firefox-${{ needs.metadata.outputs.asset_suffix }}
+          path: release-assets/*
+          if-no-files-found: error
+
+  safari:
+    name: Package Safari
+    needs: metadata
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - name: Build shared packages
+        run: |
+          npm run build --workspace=@windowllm/types --workspace=@windowllm/protocol --workspace=@windowllm/adapters
+          npm run build --workspace=@windowllm/client
+
+      - name: Build and package Safari app
+        env:
+          WINDOWLLM_EXTENSION_VERSION: ${{ needs.metadata.outputs.version }}
+          ASSET_SUFFIX: ${{ needs.metadata.outputs.asset_suffix }}
+        run: |
+          npm run build:extension:safari
+          app_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
+            packages/extension/safari-project/build/WindowLLM.app/Contents/Info.plist)"
+          test "$app_version" = "$WINDOWLLM_EXTENSION_VERSION"
+          lipo packages/extension/safari-project/build/WindowLLM.app/Contents/MacOS/WindowLLM \
+            -verify_arch arm64 x86_64
+          mkdir -p release-assets
+          ditto -c -k --sequesterRsrc --keepParent \
+            packages/extension/safari-project/build/WindowLLM.app \
+            "release-assets/windowllm-safari-${ASSET_SUFFIX}.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: safari-${{ needs.metadata.outputs.asset_suffix }}
+          path: release-assets/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub release
+    needs: [metadata, chromium-firefox, safari]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: '*-${{ needs.metadata.outputs.asset_suffix }}'
+          path: release-assets
+          merge-multiple: true
+
+      - name: Create checksums
+        run: |
+          cd release-assets
+          sha256sum * > SHA256SUMS
+
+      - name: Replace nightly release
+        if: needs.metadata.outputs.stable != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
+          VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          gh release delete "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
+          gh api --method DELETE \
+            "repos/${GITHUB_REPOSITORY}/git/refs/tags/${RELEASE_TAG}" || true
+          gh release create "$RELEASE_TAG" release-assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "WindowLLM nightly" \
+            --notes "Automated nightly extension build from commit ${GITHUB_SHA} (extension version ${VERSION})." \
+            --prerelease
+
+      - name: Publish tagged release
+        if: needs.metadata.outputs.stable == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
+        run: |
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" release-assets/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+          else
+            gh release create "$RELEASE_TAG" release-assets/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --title "WindowLLM ${RELEASE_TAG}" \
+              --generate-notes
+          fi

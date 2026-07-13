@@ -167,6 +167,17 @@ For distribution, copy to Applications: `cp -R packages/extension/safari-project
 - Run `xcodebuild -runFirstLaunch` after first Xcode install
 - Download Xcode from [developer.apple.com/download](https://developer.apple.com/download/all/) (free Apple ID required)
 
+#### Extension Releases
+
+GitHub Actions publishes Chrome, Firefox, and Safari archives to GitHub Releases:
+
+- The replaceable `nightly` prerelease is rebuilt every day and can also be run manually.
+- Pushing a version tag such as `v0.2.0` creates a normal, versioned release with
+  that version embedded in both the extension manifest and `window.llm.version`.
+
+The Safari archive contains a universal, ad-hoc signed macOS app produced by the
+Xcode release build. Store signing and notarization are not part of this workflow.
+
 - [Chrome Web Store](#) (coming soon)
 - [Firefox Add-ons](#) (coming soon)
 - [Mac App Store](#) (coming soon)
