@@ -51,9 +51,6 @@ pnpm-lock.yaml
 *.zip
 safari-project/
 
-# Spec build output
-spec/*.html
-
 # Local development certificates
 .certs/
 

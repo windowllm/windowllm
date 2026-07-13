@@ -40,7 +40,8 @@ export function Landing({ onOpenVault }: { onOpenVault: () => void }) {
           <a href="#how">How it works</a>
           <a href="#extension">Extension</a>
           <a href="/demo/">Demo</a>
-          <a href="#developers">Developers</a>
+          <a href="/docs/">Docs</a>
+          <a href="/spec/">Spec</a>
           <a href={GITHUB} target="_blank" rel="noopener noreferrer">GitHub</a>
           <button type="button" onClick={onOpenVault} className="wl-nav-cta wl-btn wl-btn-gold" style={{ padding: '0.5rem 1rem' }}>Open vault</button>
         </div>
@@ -176,6 +177,10 @@ export function Landing({ onOpenVault }: { onOpenVault: () => void }) {
             <span className="wl-eyebrow">For developers</span>
             <h2 className="wl-h2">Two lines to give your users AI.</h2>
             <p>No API keys in your frontend. No backend proxy. Your users bring their own model through WindowLLM, and you just call the API.</p>
+            <div className="wl-cta-row" style={{ marginTop: '1.4rem' }}>
+              <a href="/docs/" className="wl-btn wl-btn-gold">Read the developer guide</a>
+              <a href="/spec/" className="wl-btn wl-btn-ghost">Read the spec</a>
+            </div>
           </div>
           <div className="wl-snippet">
             <div className="wl-snippet-head">your site</div>
@@ -212,8 +217,9 @@ export function Landing({ onOpenVault }: { onOpenVault: () => void }) {
         <div className="wl-footer-row">
           <span>WindowLLM &middot; your AI, your rules</span>
           <span style={{ display: 'flex', gap: '1.4rem' }}>
+            <a href="/docs/">Docs</a>
+            <a href="/spec/">Spec</a>
             <a href={GITHUB} target="_blank" rel="noopener noreferrer">GitHub</a>
-            <a href="#how">How it works</a>
             <span style={{ color: 'var(--wl-faint)' }}>This page makes no third-party requests.</span>
           </span>
         </div>

@@ -770,6 +770,7 @@ function UnlockPopup({ returnTo }: { returnTo: string }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [isSetUp, setIsSetUp] = useState<boolean | null>(null);
+  useEffect(() => { document.title = 'Unlock · WindowLLM Vault'; }, []);
   const encryption = getVaultEncryption();
 
   useEffect(() => {
@@ -1069,6 +1070,7 @@ function VaultApp({ onExit }: { onExit?: () => void }) {
 function ConsentPopup({ origin }: { origin: string }) {
   const [loading, setLoading] = useState(false);
   const api = getVaultAPI();
+  useEffect(() => { document.title = 'Permission · WindowLLM Vault'; }, []);
 
   const handleGrant = async () => {
     setLoading(true);
@@ -1206,6 +1208,14 @@ function Site() {
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
+
+  // "WindowLLM Vault" names only the vault surface; the home page (the whole
+  // site's landing) keeps the plain product title.
+  useEffect(() => {
+    document.title = view === 'vault'
+      ? 'WindowLLM Vault'
+      : 'WindowLLM — bring your own AI to every website';
+  }, [view]);
 
   const openVault = () => {
     window.history.pushState({}, '', '/vault');

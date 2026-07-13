@@ -76,8 +76,8 @@ types → protocol → adapters → client → vault
 ```bash
 npm install                 # install all workspaces
 
-# Build in DEPENDENCY ORDER — root `npm run build` is NOT topological and also
-# builds the network-dependent spec (bikeshed). CI and deploy build explicitly:
+# Build in DEPENDENCY ORDER — root `npm run build` is NOT topological. CI and
+# deploy build explicitly (the spec and dev guide are static HTML, no build):
 npm run build --workspace=@windowllm/types --workspace=@windowllm/protocol --workspace=@windowllm/adapters
 npm run build --workspace=@windowllm/client
 npm run build --workspace=@windowllm/vault
@@ -97,9 +97,13 @@ npm run dev:examples        # the examples/ demos
 ## Deployment
 
 - `.github/workflows/deploy-pages.yml` builds the shared packages + client + vault,
-  assembles `_site` (`vault/dist/*` + `llm.js` + `examples/` → `/demo` + `CNAME` +
+  assembles `_site` (`vault/dist/*` + `llm.js` + `examples/` → `/demo` +
+  `spec/index.html` → `/spec/` + `docs/index.html` → `/docs/` + `CNAME` +
   `404.html` + `/vault/index.html`), and force-pushes the **gh-pages** branch on
   every push to `main`.
+- The **spec** (`/spec/`, ReSpec — renders client-side, no build) and the **developer
+  guide** (`/docs/`, self-contained static HTML) are copied in as plain files, so
+  GitHub Pages serves them directly ahead of the SPA `404.html` fallback.
 - GitHub Pages serves gh-pages at **windowllm.org** with **Enforce HTTPS on** (a
   secure context is required — `crypto.subtle` for key encryption only exists over
   HTTPS/localhost). HTML is CDN-cached ~10 min, so fixes need a hard refresh.
@@ -173,6 +177,11 @@ npm run dev:examples        # the examples/ demos
 
 ## Useful References
 
-- [API Design](./docs/api-design.md) — full API specification
-- [Bikeshed Spec](./spec/index.bs) — W3C-style specification
+- [Specification](./spec/index.html) — **normative** [ReSpec](https://respec.org/)
+  spec (source-accurate WebIDL), published at `windowllm.org/spec/`. This replaced
+  the old Bikeshed source. Edit the WebIDL/prose here when the `window.llm` surface
+  in `@windowllm/types` changes.
+- [Developer Guide](./docs/index.html) — friendly, example-driven guide for site
+  authors, published at `windowllm.org/docs/`. Self-contained (no third-party requests).
+- [API Design](./docs/api-design.md) — internal design notes / rationale.
 - [README](./README.md) — setup, provider CORS status, testing details

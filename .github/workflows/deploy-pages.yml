@@ -13,6 +13,8 @@ on:
       - 'packages/adapters/**'
       - 'packages/protocol/**'
       - 'packages/types/**'
+      - 'spec/**'
+      - 'docs/index.html'
       - '.github/workflows/deploy-pages.yml'
   workflow_dispatch:
 
@@ -50,6 +52,13 @@ jobs:
           mkdir -p _site/demo
           cp -r examples/* _site/demo/
           rm -f _site/demo/vite.config.ts
+          # Formal ReSpec spec (/spec/) and the friendly developer guide (/docs/).
+          # Both are self-contained static HTML — no build step. Because they are
+          # real files, GitHub Pages serves them directly (the 404.html SPA
+          # fallback never sees these paths).
+          mkdir -p _site/spec _site/docs
+          cp spec/index.html _site/spec/index.html
+          cp docs/index.html _site/docs/index.html
           # SPA fallback so client-routed paths resolve to the app instead of 404:
           #  - /vault           (the vault; served 200 via its own index.html)
           #  - /unlock, etc.    (popup routes opened by llm.js; via 404.html)

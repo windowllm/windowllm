@@ -4,12 +4,10 @@
   "private": true,
   "description": "Universal browser LLM API - giving users sovereignty over their AI",
   "workspaces": [
-    "packages/*",
-    "spec"
+    "packages/*"
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
-    "build:spec": "./spec/build.sh",
     "build:extension": "npm run build --workspace=@windowllm/vault && npm run build:chrome --workspace=@windowllm/extension && cp packages/extension/manifest.json packages/extension/dist/ && cp -r packages/extension/icons packages/extension/dist/",
     "build:extension:firefox": "npm run build --workspace=@windowllm/vault && npm run build:firefox --workspace=@windowllm/extension && cp packages/extension/manifest.firefox.json packages/extension/dist/manifest.json && cp -r packages/extension/icons packages/extension/dist/",
     "build:extension:safari": "npm run build --workspace=@windowllm/vault && npm run build:safari --workspace=@windowllm/extension",

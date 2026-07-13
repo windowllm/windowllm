@@ -21,8 +21,7 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      # Build in dependency order — root `npm run build` is NOT topological and also
-      # pulls in the network-dependent `spec` (bikeshed) build.
+      # Build in dependency order — root `npm run build` is NOT topological.
       - run: npm run build --workspace=@windowllm/types --workspace=@windowllm/protocol --workspace=@windowllm/adapters
       - run: npm run build --workspace=@windowllm/client
       - run: npm run build --workspace=@windowllm/vault

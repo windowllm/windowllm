@@ -1,0 +1,1066 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WindowLLM API</title>
+  <script src="https://www.w3.org/Tools/respec/respec-w3c" class="remove" defer></script>
+  <script class="remove">
+    // ReSpec configuration. This document renders client-side via ReSpec
+    // (https://respec.org/); there is no build step.
+    var respecConfig = {
+      specStatus: "unofficial",
+      shortName: "windowllm",
+      editors: [
+        { name: "WindowLLM Contributors", url: "https://windowllm.org" }
+      ],
+      github: "https://github.com/windowllm/windowllm",
+      edDraftURI: "https://windowllm.org/spec/",
+      latestVersion: "https://windowllm.org/spec/",
+      license: "cc-by",
+      xref: { profile: "web-platform", specs: ["FileAPI"] },
+      // Reference-style spec: IDL members are defined here but not necessarily
+      // linked from prose, so the "unused dfn" rule is a false positive.
+      lint: { "no-http-props": false, "no-unused-dfns": false },
+      // Web IDL forces a member whose name is a reserved word (e.g. `required`)
+      // to be written escaped as `_required`, and webidl2 renders that escaped
+      // form verbatim. Cross-reference anchors already use the de-escaped id, so
+      // we strip the leading underscore from the *display* only — readers see the
+      // real JavaScript property name while links keep working.
+      postProcess: [
+        (_config, doc) => {
+          const KEYWORDS = new Set([
+            "required", "attribute", "const", "default", "dictionary", "enum",
+            "interface", "namespace", "typedef", "async", "iterable", "maplike",
+            "setlike", "readonly", "static", "stringifier", "getter", "setter",
+            "deleter", "inherit", "includes", "constructor", "callback", "partial",
+            "mixin", "unrestricted"
+          ]);
+          doc.querySelectorAll("pre.idl").forEach((pre) => {
+            const walker = doc.createTreeWalker(pre, NodeFilter.SHOW_TEXT);
+            let node;
+            while ((node = walker.nextNode())) {
+              node.nodeValue = node.nodeValue.replace(
+                /(^|[^\w])_([A-Za-z_]\w*)/g,
+                (full, before, id) => (KEYWORDS.has(id) ? before + id : full)
+              );
+            }
+          });
+        }
+      ],
+      logos: [],
+      otherLinks: [
+        {
+          key: "Developers",
+          data: [
+            { value: "Getting-started guide", href: "https://windowllm.org/docs/" },
+            { value: "Live demos", href: "https://windowllm.org/demo/" }
+          ]
+        }
+      ],
+      localBiblio: {
+        "PERMISSIONS": {
+          title: "Permissions",
+          href: "https://www.w3.org/TR/permissions/",
+          publisher: "W3C"
+        }
+      }
+    };
+  </script>
+  <style>
+    /* WindowLLM brand accent over the default ReSpec chrome. */
+    :root { --wl-gold: #c79a3e; }
+    h2 { border-bottom: 1px solid rgba(0,0,0,.08); padding-bottom: .2em; }
+    a[href] { color: #9a6f16; }
+    .wl-guide-callout {
+      border: 1px solid rgba(199,154,62,.5);
+      border-left: 4px solid var(--wl-gold);
+      background: rgba(199,154,62,.08);
+      padding: 1rem 1.15rem;
+      border-radius: 6px;
+      margin: 1.5rem 0;
+    }
+    .wl-guide-callout strong { color: #7a5300; }
+    pre.idl { border-left: .5em solid var(--wl-gold); }
+  </style>
+</head>
+<body>
+
+<section id="abstract">
+  <p>
+    This specification defines <code>window.llm</code>,
+    a browser API for accessing Large Language Models (LLMs) through
+    <em>user-configured</em> providers. It gives users sovereignty over their AI:
+    a website requests a session and completes prompts, while the user's API keys
+    and provider configuration stay sealed inside a vault origin and never reach
+    the calling site.
+  </p>
+</section>
+
+<section id="sotd">
+  <p>
+    This document is an <strong>unofficial proposal</strong>. It is not a W3C
+    Standard nor on the W3C Standards Track. It describes an API that has a
+    working reference implementation, published at
+    <a href="https://windowllm.org">windowllm.org</a>. Feedback and
+    contributions are welcome via the
+    <a href="https://github.com/windowllm/windowllm">GitHub repository</a>.
+  </p>
+</section>
+
+<section class="informative" id="intro">
+  <h2>Introduction</h2>
+  <p>
+    The web platform lacks a standardized way for websites to access LLM
+    capabilities. Sites that want AI features today must either embed their own
+    provider credentials (exposing them to the browser) or proxy every request
+    through their own backend (seeing every user prompt). Users, meanwhile, have
+    no portable configuration: switching models or providers means reconfiguring
+    each site individually.
+  </p>
+  <p>
+    The <code>window.llm</code> API addresses this with a <em>vault-based</em>
+    architecture. The user configures their models once, at a trusted vault
+    origin. Any site can then call <code>window.llm</code> to use them, mediated by
+    per-site permission and rate limits, without ever handling the user's
+    credentials.
+  </p>
+
+  <aside class="example" title="Basic usage">
+    <pre class="js">
+const session = await window.llm.requestSession();
+const result = await session.complete("What is the capital of France?");
+console.log(result.message.content); // "Paris is the capital of France."
+    </pre>
+  </aside>
+
+  <div class="wl-guide-callout">
+    <p>
+      <strong>Building with WindowLLM?</strong> This document is the normative
+      reference. If you just want to ship a feature, start with the friendly,
+      example-driven <a href="https://windowllm.org/docs/">Getting-started
+      guide</a> — then come back here for the exact contract.
+    </p>
+  </div>
+
+  <section id="goals">
+    <h3>Goals</h3>
+    <ul>
+      <li><strong>User sovereignty.</strong> Users control their AI
+        configuration; sites request access, not the other way around.</li>
+      <li><strong>Provider agnosticism.</strong> The same API works across
+        providers; sites request capabilities, not specific vendors.</li>
+      <li><strong>Privacy.</strong> API keys and credentials never leave the
+        user's control.</li>
+      <li><strong>Progressive enhancement.</strong> Works with no install via an
+        iframe; a browser extension unlocks local models and lifts CORS
+        limits.</li>
+    </ul>
+  </section>
+
+  <section id="non-goals">
+    <h3>Non-goals</h3>
+    <ul>
+      <li>Defining specific LLM provider wire protocols.</li>
+      <li>Standardizing model training or fine-tuning interfaces.</li>
+      <li>Guaranteeing model behavior, quality, or the content of outputs.</li>
+    </ul>
+  </section>
+</section>
+
+<section class="informative" id="rationale">
+  <h2>Rationale</h2>
+  <p>This section is non-normative.</p>
+
+  <section id="rationale-problem">
+    <h3>Problem statement</h3>
+    <ol>
+      <li><strong>Fragmented credentials.</strong> Users hand API keys to
+        individual sites, multiplying the places a key can leak.</li>
+      <li><strong>No portability.</strong> Configuration is per-site; changing
+        providers means reconfiguring every site.</li>
+      <li><strong>Limited user control.</strong> Sites choose the model, see
+        every prompt, and set (or omit) usage limits.</li>
+      <li><strong>Vendor lock-in.</strong> Browser-native AI APIs couple users
+        to a single vendor's models with no choice.</li>
+    </ol>
+  </section>
+
+  <section id="rationale-alternatives">
+    <h3>Alternatives considered</h3>
+    <p>
+      <strong>Backend proxies</strong> require users to trust each site with
+      prompt content, share no configuration across sites, and cannot use the
+      user's personal keys or local models.
+      A <strong>browser-native API</strong> ties users to the browser vendor's
+      chosen models and cannot leverage existing subscriptions.
+      An <strong>extension-only approach</strong> raises the adoption barrier and
+      is blocked outright on platforms such as iOS Safari.
+    </p>
+  </section>
+
+  <section id="rationale-architecture">
+    <h3>Chosen architecture</h3>
+    <p>
+      WindowLLM uses a vault origin (for example <code>windowllm.org</code>) with
+      progressive enhancement. The browser's <a data-cite="HTML#origin">Same-Origin
+      Policy</a> isolates credentials: keys stored in the vault origin are
+      inaccessible to other origins, even under XSS on a calling site. Cross-origin
+      communication uses <a data-cite="HTML#dom-window-postmessage"><code>postMessage</code></a>
+      with strict origin validation. The API can be provided in three ways —
+      by a browser <em>extension</em>, by a vault <em>iframe</em>, or, in
+      principle, by a <em>native</em> browser implementation — and normalizes
+      differences between providers behind one interface.
+    </p>
+  </section>
+</section>
+
+<section id="infrastructure">
+  <h2>The <code>window.llm</code> entry point</h2>
+  <p>
+    The API is exposed on the {{Window}} object as {{Window/llm}}. When no
+    implementation is present, the attribute is absent (its value is
+    <code>undefined</code>); sites MUST feature-detect before use.
+  </p>
+
+  <pre class="idl">
+partial interface Window {
+  [SameObject] readonly attribute WindowLLM? llm;
+};
+  </pre>
+
+  <pre class="idl">
+[Exposed=Window, SecureContext]
+interface WindowLLM {
+  readonly attribute DOMString version;
+  readonly attribute boolean available;
+  readonly attribute LLMProviderType provider;
+
+  [SameObject] readonly attribute LLMPermissions permissions;
+  [SameObject] readonly attribute LLMCapabilities capabilities;
+  [SameObject] readonly attribute LLMModelRegistry models;
+
+  Promise&lt;LLMSession&gt; requestSession(optional SessionOptions options = {});
+  Promise&lt;EmbeddingSession&gt; requestEmbedding(optional EmbeddingOptions options = {});
+};
+
+enum LLMProviderType {
+  "extension",
+  "iframe",
+  "native"
+};
+  </pre>
+
+  <section id="windowllm-attributes">
+    <h3>Attributes</h3>
+    <dl>
+      <dt><dfn attribute for="WindowLLM">version</dfn></dt>
+      <dd>The version of the implementation, as a
+        <a href="https://semver.org/">semver</a> string.</dd>
+
+      <dt><dfn attribute for="WindowLLM">available</dfn></dt>
+      <dd>Returns <code>true</code> if LLM access is configured and ready. When
+        <code>false</code>, {{WindowLLM/requestSession()}} rejects with
+        <a>NOT_CONFIGURED</a>.</dd>
+
+      <dt><dfn attribute for="WindowLLM">provider</dfn></dt>
+      <dd>How this API is provided: <code>"extension"</code> for a browser
+        extension, <code>"iframe"</code> for the vault iframe, or
+        <code>"native"</code> for a built-in browser implementation.</dd>
+
+      <dt><dfn attribute for="WindowLLM">permissions</dfn></dt>
+      <dd>The {{LLMPermissions}} object for querying and requesting access.</dd>
+
+      <dt><dfn attribute for="WindowLLM">capabilities</dfn></dt>
+      <dd>The {{LLMCapabilities}} object for coarse-grained capability
+        detection.</dd>
+
+      <dt><dfn attribute for="WindowLLM">models</dfn></dt>
+      <dd>The {{LLMModelRegistry}} for discovering configured models.</dd>
+    </dl>
+  </section>
+
+  <section id="windowllm-methods">
+    <h3>Methods</h3>
+
+    <h4><dfn method for="WindowLLM">requestSession(options)</dfn></h4>
+    <div algorithm>
+      The <code>requestSession(|options|)</code> method steps are:
+      <ol>
+        <li>Let |promise| be a new promise.</li>
+        <li>If [=this=]'s {{WindowLLM/available}} is <code>false</code>, reject
+          |promise| with an {{LLMError}} whose {{LLMError/code}} is
+          <a>NOT_CONFIGURED</a> and return |promise|.</li>
+        <li>Let |permission| be the result of requesting permission for the
+          <code>"chat"</code> capability.</li>
+        <li>If |permission|'s state is <code>"denied"</code>, reject |promise|
+          with an {{LLMError}} whose {{LLMError/code}} is
+          <a>PERMISSION_DENIED</a> and return |promise|.</li>
+        <li>Let |session| be a new {{LLMSession}}, selecting a model from
+          |options|.{{SessionOptions/model}} or by capability matching.</li>
+        <li>Resolve |promise| with |session| and return |promise|.</li>
+      </ol>
+    </div>
+
+    <h4><dfn method for="WindowLLM">requestEmbedding(options)</dfn></h4>
+    <p>
+      Returns a {{EmbeddingSession}} bound to an embedding-capable model, or
+      rejects with <a>CAPABILITY_UNAVAILABLE</a> if none is configured.
+    </p>
+  </section>
+</section>
+
+<section id="model-registry">
+  <h2>Model discovery</h2>
+  <pre class="idl">
+[Exposed=Window, SecureContext]
+interface LLMModelRegistry {
+  Promise&lt;sequence&lt;LLMModel&gt;&gt; list();
+  Promise&lt;LLMModel?&gt; get(DOMString id);
+  Promise&lt;sequence&lt;LLMModel&gt;&gt; match(optional ModelRequirements requirements = {});
+};
+
+[Exposed=Window, SecureContext]
+interface LLMModel {
+  readonly attribute DOMString id;
+  readonly attribute DOMString name;
+  readonly attribute DOMString provider;
+  [SameObject] readonly attribute ModelCapabilities capabilities;
+  [SameObject] readonly attribute ModelLimits limits;
+  readonly attribute boolean fallback;
+};
+  </pre>
+
+  <p>
+    {{LLMModel/id}} is a stable identifier such as
+    <code>"anthropic/claude-3-opus"</code>; {{LLMModel/name}} is human-readable.
+    {{LLMModel/fallback}} is <code>true</code> when the entry comes from an
+    adapter's built-in list because the provider's live model endpoint was
+    unreachable, rather than from the provider itself.
+  </p>
+
+  <pre class="idl">
+dictionary ModelRequirements {
+  CapabilityRequirements capabilities;
+  LimitRequirements limits;
+  ModelPreference preference = "quality";
+};
+
+dictionary CapabilityRequirements {
+  sequence&lt;DOMString&gt; _required = [];
+  sequence&lt;DOMString&gt; preferred = [];
+};
+
+dictionary LimitRequirements {
+  unsigned long minContextWindow;
+  unsigned long minOutputTokens;
+};
+
+enum ModelPreference {
+  "quality",
+  "speed",
+  "cost"
+};
+  </pre>
+
+  <p>
+    {{CapabilityRequirements/required}} lists capabilities a model MUST have to
+    match; {{CapabilityRequirements/preferred}} lists capabilities used only for
+    ranking. {{ModelRequirements/preference}} orders matches by overall
+    <code>"quality"</code>, <code>"speed"</code>, or <code>"cost"</code>.
+  </p>
+
+  <div algorithm>
+    The <dfn method for="LLMModelRegistry">match(requirements)</dfn> method steps
+    are:
+    <ol>
+      <li>Let |all| be the result of {{LLMModelRegistry/list()}}.</li>
+      <li>Let |matched| be an empty list.</li>
+      <li>For each |model| in |all|: if |model| satisfies every capability in
+        |requirements|.{{ModelRequirements/capabilities}}.{{CapabilityRequirements/required}}
+        and every limit in |requirements|.{{ModelRequirements/limits}}, append
+        |model| to |matched|.</li>
+      <li>Sort |matched| by |requirements|.{{ModelRequirements/preference}},
+        breaking ties toward models satisfying more
+        {{CapabilityRequirements/preferred}} capabilities.</li>
+      <li>Return |matched|.</li>
+    </ol>
+  </div>
+
+  <aside class="example" title="Finding a model by capability">
+    <pre class="js">
+const [best] = await window.llm.models.match({
+  capabilities: { required: ["vision", "tools"] },
+  limits: { minContextWindow: 100000 },
+  preference: "quality"
+});
+    </pre>
+  </aside>
+
+  <section id="model-capabilities">
+    <h3>Capabilities and limits</h3>
+    <pre class="idl">
+[Exposed=Window, SecureContext]
+interface ModelCapabilities {
+  readonly attribute boolean chat;
+  readonly attribute boolean streaming;
+  readonly attribute boolean vision;
+  readonly attribute boolean tools;
+  readonly attribute boolean embeddings;
+  readonly attribute boolean jsonMode;
+  readonly attribute boolean systemPrompt;
+  readonly attribute boolean multiTurn;
+  readonly attribute boolean audioInput;
+  readonly attribute boolean audioOutput;
+};
+
+[Exposed=Window, SecureContext]
+interface ModelLimits {
+  readonly attribute unsigned long contextWindow;
+  readonly attribute unsigned long maxOutputTokens;
+  readonly attribute unsigned long? maxImageCount;
+  readonly attribute unsigned long? maxImageSize;
+  readonly attribute FrozenArray&lt;DOMString&gt;? supportedImageFormats;
+  readonly attribute unsigned long? embeddingDimensions;
+  readonly attribute unsigned long? maxToolCount;
+};
+    </pre>
+  </section>
+</section>
+
+<section id="sessions">
+  <h2>Sessions</h2>
+  <p>
+    A {{LLMSession}} is a stateful chat context. It retains conversation history
+    across {{LLMSession/complete()}} and {{LLMSession/stream()}} calls until
+    {{LLMSession/reset()}} or {{LLMSession/destroy()}}.
+  </p>
+
+  <pre class="idl">
+dictionary SessionOptions {
+  DOMString model;
+  ModelRequirements capabilities;
+  DOMString systemPrompt;
+  sequence&lt;Message&gt; initialMessages = [];
+  sequence&lt;ToolDefinition&gt; tools = [];
+  ResponseFormat responseFormat;
+  SessionSettings settings;
+  AbortSignal signal;
+};
+
+dictionary SessionSettings {
+  double temperature;
+  unsigned long maxTokens;
+  sequence&lt;DOMString&gt; stopSequences = [];
+};
+
+dictionary ResponseFormat {
+  required ResponseFormatType type;
+  object schema;
+};
+
+enum ResponseFormatType {
+  "text",
+  "json",
+  "json_object"
+};
+
+typedef (DOMString or Message or sequence&lt;Message&gt;) SessionInput;
+
+[Exposed=Window, SecureContext]
+interface LLMSession {
+  readonly attribute DOMString id;
+  [SameObject] readonly attribute LLMModel model;
+  readonly attribute FrozenArray&lt;Message&gt; messages;
+  readonly attribute FrozenArray&lt;ToolDefinition&gt; tools;
+  [SameObject] readonly attribute ModelCapabilities capabilities;
+
+  Promise&lt;CompletionResult&gt; complete(SessionInput input);
+  object stream(SessionInput input); // an async iterable of StreamChunk
+
+  Promise&lt;LLMSession&gt; clone();
+  undefined reset();
+  undefined destroy();
+};
+  </pre>
+
+  <p>
+    {{SessionOptions/settings}}'s {{SessionSettings/temperature}} is normalized
+    to a 0–2 range across providers. When {{ResponseFormat/type}} is
+    <code>"json"</code>, {{ResponseFormat/schema}} MAY constrain the output shape
+    on models reporting the <code>jsonMode</code> capability.
+  </p>
+
+  <section id="session-complete">
+    <h3><code>complete()</code></h3>
+    <div algorithm>
+      The <dfn method for="LLMSession">complete(input)</dfn> method steps are:
+      <ol>
+        <li>Let |promise| be a new promise.</li>
+        <li>If [=this=] has been destroyed, reject |promise| with an
+          {{LLMError}} whose {{LLMError/code}} is <a>SESSION_DESTROYED</a> and
+          return |promise|.</li>
+        <li>Let |messages| be the result of normalizing |input| to a list of
+          {{Message}}, and append them to [=this=]'s history.</li>
+        <li>Send the request to the configured provider.</li>
+        <li>When the provider responds, let |result| be a new
+          {{CompletionResult}} carrying the response {{CompletionResult/message}},
+          {{CompletionResult/usage}}, and {{CompletionResult/finishReason}};
+          append the response message to history; and resolve |promise| with
+          |result|.</li>
+        <li>Return |promise|.</li>
+      </ol>
+    </div>
+  </section>
+
+  <section id="session-stream">
+    <h3><code>stream()</code></h3>
+    <p>
+      The <dfn method for="LLMSession">stream(input)</dfn> method returns an
+      <a data-cite="ECMASCRIPT#sec-asynciterator-interface">async iterable</a>
+      that yields {{StreamChunk}} objects as the response is generated. The
+      final <code>"done"</code> chunk carries the assembled
+      {{CompletionResult}}, so callers need not accumulate it themselves.
+    </p>
+  </section>
+
+  <section id="session-lifecycle">
+    <h3>Lifecycle</h3>
+    <p>
+      {{LLMSession/clone()}} returns a new session with a copy of the current
+      history, for branching a conversation without mutating the original.
+      {{LLMSession/reset()}} clears history while keeping the system prompt.
+      {{LLMSession/destroy()}} releases resources; subsequent calls reject with
+      <a>SESSION_DESTROYED</a>.
+    </p>
+  </section>
+</section>
+
+<section id="messages">
+  <h2>Messages and content</h2>
+  <pre class="idl">
+dictionary Message {
+  required MessageRole role;
+  required MessageContent content;
+  sequence&lt;ToolCall&gt; toolCalls;
+  DOMString toolCallId;
+  sequence&lt;ToolResult&gt; toolResults;
+};
+
+typedef (DOMString or sequence&lt;ContentPart&gt;) MessageContent;
+
+enum MessageRole {
+  "system",
+  "user",
+  "assistant",
+  "tool"
+};
+
+dictionary ContentPart {
+  required ContentPartType type;
+  DOMString text;
+  DOMString data;
+  (DOMString or Blob) source;
+  DOMString mimeType;
+  DOMString alt;
+};
+
+enum ContentPartType {
+  "text",
+  "image",
+  "audio"
+};
+  </pre>
+
+  <p>
+    {{Message/content}} is either a plain string or a list of {{ContentPart}}s
+    for multimodal input. The active fields of a {{ContentPart}} depend on its
+    {{ContentPart/type}}:
+  </p>
+  <table class="simple">
+    <thead>
+      <tr><th>type</th><th>fields</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>"text"</code></td>
+        <td>{{ContentPart/text}}</td></tr>
+      <tr><td><code>"image"</code></td>
+        <td>{{ContentPart/data}} (base64 or URL), optional
+          {{ContentPart/mimeType}} and {{ContentPart/alt}}</td></tr>
+      <tr><td><code>"audio"</code></td>
+        <td>{{ContentPart/source}} (string or {{Blob}}), optional
+          {{ContentPart/mimeType}}</td></tr>
+    </tbody>
+  </table>
+  <p>
+    On a <code>"tool"</code>-role message, {{Message/toolCallId}} identifies the
+    {{ToolCall}} being answered.
+  </p>
+</section>
+
+<section id="tools">
+  <h2>Tool calling</h2>
+  <pre class="idl">
+dictionary ToolDefinition {
+  required DOMString name;
+  required DOMString description;
+  required ToolParameters parameters;
+  boolean strict = false;
+};
+
+dictionary ToolParameters {
+  DOMString type = "object";
+  record&lt;DOMString, object&gt; properties;
+  sequence&lt;DOMString&gt; _required = [];
+  boolean additionalProperties = false;
+};
+
+dictionary ToolCall {
+  required DOMString id;
+  required DOMString name;
+  required record&lt;DOMString, any&gt; arguments;
+};
+
+dictionary ToolResult {
+  required DOMString toolCallId;
+  required (DOMString or object) content;
+  required boolean success;
+  DOMString error;
+};
+  </pre>
+
+  <p>
+    Tools are declared with JSON-Schema parameters. When a model decides to call
+    a tool, {{LLMSession/complete()}} resolves with
+    {{CompletionResult/finishReason}} <code>"tool_use"</code> and a list of
+    {{CompletionResult/toolCalls}}. The site executes each call and sends the
+    outcome back as a {{ToolResult}} on a follow-up message.
+  </p>
+
+  <aside class="example" title="A tool round-trip">
+    <pre class="js">
+const result = await session.complete("Weather in Tokyo?");
+
+if (result.finishReason === "tool_use") {
+  const call = result.toolCalls[0];
+  const data = await getWeather(call.arguments);
+  await session.complete([{
+    role: "tool",
+    toolCallId: call.id,
+    content: data,
+    success: true
+  }]);
+}
+    </pre>
+  </aside>
+</section>
+
+<section id="results">
+  <h2>Completion results</h2>
+  <pre class="idl">
+dictionary CompletionResult {
+  required Message message;
+  required TokenUsage usage;
+  required FinishReason finishReason;
+  sequence&lt;ToolCall&gt; toolCalls;
+};
+
+dictionary TokenUsage {
+  required unsigned long inputTokens;
+  required unsigned long outputTokens;
+  required unsigned long totalTokens;
+  CostEstimate estimatedCost;
+};
+
+dictionary CostEstimate {
+  required double amount;
+  required DOMString currency;
+};
+
+enum FinishReason {
+  "complete",
+  "length",
+  "tool_use",
+  "content_filter",
+  "cancelled"
+};
+  </pre>
+</section>
+
+<section id="streaming">
+  <h2>Streaming</h2>
+  <p>
+    {{LLMSession/stream()}} yields a sequence of <dfn>StreamChunk</dfn> objects.
+    A <code>StreamChunk</code> is one of the dictionaries below, discriminated by
+    its <code>type</code> member.
+  </p>
+
+  <pre class="idl">
+enum StreamChunkType {
+  "text",
+  "tool_call",
+  "usage",
+  "error",
+  "done"
+};
+
+dictionary TextStreamChunk {
+  required StreamChunkType type; // "text"
+  required DOMString text;        // incremental delta
+  required DOMString accumulated; // full text so far
+};
+
+dictionary ToolCallStreamChunk {
+  required StreamChunkType type; // "tool_call"
+  required PartialToolCall toolCall;
+  required unsigned long index;
+  required boolean complete;
+};
+
+dictionary PartialToolCall {
+  DOMString id;
+  DOMString name;
+  record&lt;DOMString, any&gt; arguments;
+};
+
+dictionary UsageStreamChunk {
+  required StreamChunkType type; // "usage"
+  required TokenUsage usage;
+};
+
+dictionary ErrorStreamChunk {
+  required StreamChunkType type; // "error"
+  required StreamError error;
+};
+
+dictionary StreamError {
+  required DOMString code;
+  required DOMString message;
+};
+
+dictionary DoneStreamChunk {
+  required StreamChunkType type; // "done"
+  required FinishReason finishReason;
+  required CompletionResult result;
+};
+  </pre>
+
+  <aside class="example" title="Consuming a stream">
+    <pre class="js">
+for await (const chunk of session.stream("Write a story")) {
+  switch (chunk.type) {
+    case "text":
+      output.textContent = chunk.accumulated;
+      break;
+    case "tool_call":
+      if (chunk.complete) await handleToolCall(chunk.toolCall);
+      break;
+    case "done":
+      console.log("Tokens:", chunk.result.usage.totalTokens);
+      break;
+  }
+}
+    </pre>
+  </aside>
+</section>
+
+<section id="embeddings">
+  <h2>Embeddings</h2>
+  <pre class="idl">
+dictionary EmbeddingOptions {
+  unsigned long dimensions;
+  DOMString model;
+  AbortSignal signal;
+};
+
+[Exposed=Window, SecureContext]
+interface EmbeddingSession {
+  readonly attribute DOMString id;
+  readonly attribute unsigned long dimensions;
+
+  Promise&lt;EmbeddingResult&gt; embed(DOMString text);
+  Promise&lt;sequence&lt;EmbeddingResult&gt;&gt; embedBatch(sequence&lt;DOMString&gt; texts);
+
+  undefined destroy();
+};
+
+dictionary EmbeddingResult {
+  required Float32Array vector;
+  required unsigned long inputTokens;
+  required DOMString text;
+};
+  </pre>
+  <p>
+    {{EmbeddingResult/vector}} is a {{Float32Array}} of length
+    {{EmbeddingSession/dimensions}}. {{EmbeddingResult/text}} echoes the input
+    for batch correlation.
+  </p>
+</section>
+
+<section id="permissions">
+  <h2>Permissions</h2>
+  <p>
+    Access follows the [[PERMISSIONS|Permissions API]] pattern.
+    {{LLMPermissions/query()}} never prompts; {{LLMPermissions/request()}} MAY
+    prompt the user.
+  </p>
+
+  <pre class="idl">
+[Exposed=Window, SecureContext]
+interface LLMPermissions {
+  Promise&lt;LLMPermissionStatus&gt; query(LLMPermissionDescriptor descriptor);
+  Promise&lt;LLMPermissionStatus&gt; request(LLMPermissionDescriptor descriptor);
+  Promise&lt;LLMPermissionStatus&gt; revoke(LLMPermissionDescriptor descriptor);
+};
+
+dictionary LLMPermissionDescriptor {
+  required DOMString name;
+  ModelRequirements requirements;
+};
+
+[Exposed=Window, SecureContext]
+interface LLMPermissionStatus : EventTarget {
+  readonly attribute LLMPermissionState state;
+  attribute EventHandler onchange;
+};
+
+enum LLMPermissionState {
+  "granted",
+  "denied",
+  "prompt"
+};
+  </pre>
+
+  <p>
+    {{LLMPermissionDescriptor/name}} is a capability name (for example
+    <code>"chat"</code>, <code>"tools"</code>, or <code>"embeddings"</code>).
+  </p>
+
+  <aside class="example" title="Checking before requesting">
+    <pre class="js">
+const status = await window.llm.permissions.query({ name: "chat" });
+if (status.state === "prompt") await showExplanation();
+if (status.state !== "granted") {
+  await window.llm.permissions.request({ name: "chat" });
+}
+status.onchange = () => {
+  if (status.state === "denied") showNoAccessMessage();
+};
+    </pre>
+  </aside>
+</section>
+
+<section id="capabilities">
+  <h2>Capability detection</h2>
+  <pre class="idl">
+[Exposed=Window, SecureContext]
+interface LLMCapabilities {
+  boolean has(DOMString name);
+  CapabilityInfo? get(DOMString name);
+  sequence&lt;DOMString&gt; list();
+  boolean supports(sequence&lt;DOMString&gt; names);
+};
+
+dictionary CapabilityInfo {
+  required boolean available;
+  ModelLimits limits;
+};
+  </pre>
+  <p>
+    {{LLMCapabilities}} reports the union of capabilities across the user's
+    configured models, so a site can adapt its UI before opening a session.
+  </p>
+</section>
+
+<section id="errors">
+  <h2>Error handling</h2>
+  <p>
+    Operations reject with an {{LLMError}}. It extends the ECMAScript
+    <a data-cite="ECMASCRIPT#sec-error-objects"><code>Error</code></a> object and
+    therefore also carries the standard <code>message</code>, a <code>name</code>
+    of <code>"LLMError"</code>, and an optional <code>cause</code>.
+  </p>
+
+  <pre class="idl">
+[Exposed=Window]
+interface LLMError {
+  constructor(DOMString message, LLMErrorCode code, optional object details, optional object cause);
+
+  readonly attribute LLMErrorCode code;
+  readonly attribute object? details;
+  readonly attribute boolean retryable;
+  readonly attribute unsigned long? retryAfter;
+};
+
+enum LLMErrorCode {
+  "PERMISSION_DENIED",
+  "NOT_CONFIGURED",
+  "CAPABILITY_UNAVAILABLE",
+  "MODEL_NOT_FOUND",
+  "RATE_LIMITED",
+  "QUOTA_EXCEEDED",
+  "CONTEXT_TOO_LONG",
+  "CONTENT_FILTERED",
+  "PROVIDER_ERROR",
+  "NETWORK_ERROR",
+  "TIMEOUT",
+  "CANCELLED",
+  "SESSION_EXPIRED",
+  "SESSION_DESTROYED",
+  "INVALID_INPUT",
+  "TOOL_ERROR",
+  "STORAGE_ACCESS_DENIED",
+  "EXTENSION_REQUIRED",
+  "UNKNOWN"
+};
+  </pre>
+
+  <p>
+    {{LLMError/retryable}} is <code>true</code> for the transient codes
+    <dfn>RATE_LIMITED</dfn>, <dfn>PROVIDER_ERROR</dfn>, <dfn>NETWORK_ERROR</dfn>,
+    and <dfn>TIMEOUT</dfn>. For <a>RATE_LIMITED</a>, {{LLMError/retryAfter}}
+    gives the suggested delay in milliseconds before retrying. The remaining
+    codes referenced normatively elsewhere in this document are
+    <dfn>PERMISSION_DENIED</dfn>, <dfn>NOT_CONFIGURED</dfn>,
+    <dfn>CAPABILITY_UNAVAILABLE</dfn>, and <dfn>SESSION_DESTROYED</dfn>.
+  </p>
+</section>
+
+<section id="security">
+  <h2>Security considerations</h2>
+
+  <section id="security-threat-model">
+    <h3>Threat model</h3>
+    <p>WindowLLM protects against:</p>
+    <ul>
+      <li><strong>Credential theft by malicious sites.</strong> Keys live in the
+        vault origin's storage, unreachable by other origins under the
+        Same-Origin Policy — even with XSS on a calling site.</li>
+      <li><strong>Unauthorized API usage.</strong> Per-origin permissions, rate
+        limits, and explicit consent bound what a site can do.</li>
+      <li><strong>Cost-runaway attacks.</strong> User-configurable rate limits
+        cap spend.</li>
+      <li><strong>Fingerprinting via model enumeration.</strong> Capability
+        detection is coarse-grained.</li>
+    </ul>
+    <p>It does <em>not</em> protect against a malicious vault implementation
+      (users must trust the vault origin or self-host), the LLM provider's own
+      access to prompts, all-hosts browser extensions, or a compromised
+      device.</p>
+  </section>
+
+  <section id="security-key-isolation">
+    <h3>Key isolation</h3>
+    <p>Implementations MUST ensure that API keys and credentials are never
+      accessible to calling sites. Specifically, implementations:</p>
+    <ol>
+      <li>MUST store keys only in the vault origin's storage;</li>
+      <li>MUST make all provider API calls from the vault origin;</li>
+      <li>MUST send only response content — never credentials — across
+        <code>postMessage</code>;</li>
+      <li>MUST NOT echo keys in error messages or debug output.</li>
+    </ol>
+  </section>
+
+  <section id="security-origin-validation">
+    <h3>Origin validation</h3>
+    <p>Implementations MUST validate <code>event.origin</code> on every
+      <code>postMessage</code>, MUST NOT trust origin claims embedded in a
+      payload, MUST target responses at the verified origin (never
+      <code>"*"</code>), and MUST reject messages from origins not on the
+      permission list. Message identifiers correlate requests with responses to
+      prevent confused-deputy attacks.</p>
+  </section>
+
+  <section id="security-rate-limiting">
+    <h3>Rate limiting</h3>
+    <p>Implementations MUST enforce per-origin rate limits and SHOULD make them
+      user-configurable with sensible defaults (for example requests per minute,
+      tokens per minute, and tokens per day). When a limit is exceeded,
+      implementations MUST reject with <a>RATE_LIMITED</a> and a
+      {{LLMError/retryAfter}} value.</p>
+  </section>
+
+  <section id="security-transport">
+    <h3>Transport and storage</h3>
+    <p>Implementations MUST require HTTPS for the vault origin (enforced via
+      <a data-cite="SECURE-CONTEXTS#secure-context">secure context</a>) and for
+      provider endpoints. Vault implementations MUST encrypt credentials at rest
+      using authenticated encryption (for example AES-256-GCM) with a key derived
+      from a user secret via a strong key-derivation function (for example
+      PBKDF2 with a high iteration count); the derivation secret MUST NOT be
+      stored alongside the ciphertext.</p>
+  </section>
+
+  <section id="security-sri">
+    <h3>Client-library integrity</h3>
+    <p>Because a calling site loads the client library from the vault origin,
+      site developers SHOULD pin it with
+      <a data-cite="SRI#the-integrity-attribute">Subresource Integrity</a> to
+      detect tampering:</p>
+    <aside class="example" title="Pinning llm.js with SRI">
+      <pre class="html">
+&lt;script
+  src="https://windowllm.org/llm.js"
+  integrity="sha384-HASH_OF_KNOWN_GOOD_VERSION"
+  crossorigin="anonymous"&gt;&lt;/script&gt;
+      </pre>
+    </aside>
+  </section>
+</section>
+
+<section class="informative" id="privacy">
+  <h2>Privacy considerations</h2>
+  <ul>
+    <li>Sites SHOULD NOT be able to determine exact model versions; capability
+      detection SHOULD stay coarse-grained to limit fingerprinting.</li>
+    <li>Conversation content is sent only to the user's configured provider, and
+      sites cannot read conversations from other origins.</li>
+    <li>Users MUST be shown which capabilities a site requests, grants MUST be
+      visible and revocable, and audit logs SHOULD be available.</li>
+  </ul>
+</section>
+
+<section class="informative" id="future">
+  <h2>Future extensions</h2>
+  <p>This section is non-normative.</p>
+  <p>
+    The core API requires a document context (a window with a DOM), because the
+    iframe vault, <code>postMessage</code>, and storage-access grants all depend
+    on it. Service workers and other non-document contexts therefore cannot use
+    <code>window.llm</code> directly. A browser <em>extension</em> implementation has no
+    such limit and can drive background operations.
+  </p>
+  <p>
+    A future revision may define <strong>scoped credentials</strong>: during an
+    interactive session, the user could obtain a time-bound, capability-limited
+    credential (issued by the provider, mediated by the vault) usable from
+    non-interactive clients such as service workers or backend servers. This
+    depends on provider support and is not specified here.
+  </p>
+</section>
+
+<section id="conformance">
+  <h2>Conformance</h2>
+  <p>
+    As well as sections marked non-normative, all authoring guidelines,
+    diagrams, examples, and notes are non-normative. Everything else is
+    normative.
+  </p>
+  <p>
+    The key words MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT,
+    RECOMMENDED, MAY, and OPTIONAL are to be interpreted as described in
+    [[RFC2119]].
+  </p>
+</section>
+
+<section class="appendix informative" id="acknowledgements">
+  <h2>Acknowledgements</h2>
+  <p>
+    Thanks to the web-standards community, browser vendors, and the broader web
+    development community for feedback that shaped this proposal.
+  </p>
+</section>
+
+</body>
+</html>
