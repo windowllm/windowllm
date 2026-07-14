@@ -16,6 +16,7 @@ on:
       - 'spec/**'
       - 'docs/index.html'
       - 'examples/**'
+      - 'llms.txt'
       - '.github/workflows/deploy-pages.yml'
   workflow_dispatch:
 
@@ -49,6 +50,7 @@ jobs:
           rm -rf _site && mkdir -p _site
           cp -r packages/vault/dist/* _site/
           cp packages/client/dist/llm.iife.js _site/llm.js
+          cp llms.txt _site/llms.txt
           # Live demos: static example pages that use window.llm through the vault.
           mkdir -p _site/demo
           cp -r examples/* _site/demo/
