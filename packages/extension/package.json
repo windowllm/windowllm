@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@windowllm/adapters": "*",
+    "@windowllm/page-tools": "*",
     "@windowllm/protocol": "*",
     "@windowllm/types": "*"
   },

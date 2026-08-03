@@ -50,6 +50,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.57.0",
+    "@vitest/coverage-v8": "4.1.10",
     "web-ext": "^8.10.0"
   }
 }

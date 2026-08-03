@@ -19,7 +19,7 @@ test('real extension satisfies the shared API and extension runtime contracts', 
   const result = await page.evaluate(() => (window as any).__windowllmExtensionE2E) as ContractResult;
   expect(result.tests.filter(contract => contract.status === 'fail')).toEqual([]);
   expect(result.failed).toBe(0);
-  expect(result.passed).toBe(11);
+  expect(result.passed).toBe(13);
 });
 
 test('Chrome MV3 worker and extension-owned UI load', async ({ context, extensionId, serviceWorker }) => {

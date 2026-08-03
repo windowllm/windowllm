@@ -443,8 +443,24 @@ dictionary SessionOptions {
   DOMString systemPrompt;
   sequence&lt;Message&gt; initialMessages = [];
   sequence&lt;ToolDefinition&gt; tools = [];
+  PageAccessOptions page;
   ResponseFormat responseFormat;
   SessionSettings settings;
+  AbortSignal signal;
+};
+
+dictionary PageAccessOptions {
+  required PageAccessMode access;
+  DOMString scope;
+};
+
+enum PageAccessMode {
+  "read",
+  "read-write"
+};
+
+dictionary AgentRunOptions {
+  unsigned long maxSteps = 8;
   AbortSignal signal;
 };
 
@@ -476,6 +492,7 @@ interface LLMSession {
   [SameObject] readonly attribute ModelCapabilities capabilities;
 
   Promise&lt;CompletionResult&gt; complete(SessionInput input);
+  Promise&lt;AgentResult&gt; run(SessionInput input, optional AgentRunOptions options = {});
   object stream(SessionInput input); // an async iterable of StreamChunk
 
   Promise&lt;LLMSession&gt; clone();
@@ -513,6 +530,24 @@ interface LLMSession {
     </div>
   </section>
 
+  <section id="session-run">
+    <h3><code>run()</code></h3>
+    <p>
+      The <dfn method for="LLMSession">run(input, options)</dfn> method performs
+      an automatic provider and local-tool loop for the built-in page tools
+      requested by {{SessionOptions/page}}. It resolves when the model returns a
+      final response, produces an unsupported tool call, or reaches
+      {{AgentRunOptions/maxSteps}}. It rejects when its signal is aborted.
+    </p>
+    <p>
+      Built-in page tools MUST be exposed to the provider only during
+      <code>run()</code>. {{LLMSession/complete()}} and
+      {{LLMSession/stream()}} retain their normal behavior. An implementation
+      MUST reject a {{SessionOptions}} dictionary that combines
+      {{SessionOptions/page}} with {{SessionOptions/tools}}.
+    </p>
+  </section>
+
   <section id="session-stream">
     <h3><code>stream()</code></h3>
     <p>
@@ -534,6 +569,63 @@ interface LLMSession {
       <a>SESSION_DESTROYED</a>.
     </p>
   </section>
+</section>
+
+<section id="page-tools">
+  <h2>Local page tools</h2>
+  <p>
+    When {{SessionOptions/page}} is present, the implementation adds local tools
+    whose selection behavior follows <code>querySelector()</code> and
+    <code>querySelectorAll()</code>. The provider receives tool definitions and
+    serialized results. It never receives a DOM object or direct JavaScript
+    execution authority.
+  </p>
+
+  <table class="simple">
+    <thead><tr><th>Tool</th><th>Access</th><th>Operation</th></tr></thead>
+    <tbody>
+      <tr><td><code>windowllm_page_query_selector</code></td><td>read</td><td>First CSS-selector match</td></tr>
+      <tr><td><code>windowllm_page_query_selector_all</code></td><td>read</td><td>CSS-selector matches in document order</td></tr>
+      <tr><td><code>windowllm_page_click</code></td><td>read-write</td><td>Call <code>click()</code> on a referenced element</td></tr>
+      <tr><td><code>windowllm_page_set_value</code></td><td>read-write</td><td>Set a form value and dispatch input and change events</td></tr>
+      <tr><td><code>windowllm_page_set_text_content</code></td><td>read-write</td><td>Replace <code>textContent</code></td></tr>
+      <tr><td><code>windowllm_page_set_attribute</code></td><td>read-write</td><td>Set a <code>data-*</code>, <code>aria-*</code>, or <code>title</code> attribute</td></tr>
+      <tr><td><code>windowllm_page_remove_attribute</code></td><td>read-write</td><td>Remove a <code>data-*</code>, <code>aria-*</code>, or <code>title</code> attribute</td></tr>
+    </tbody>
+  </table>
+
+  <p>
+    Query results contain serialized element state and an opaque reference.
+    Mutation tools accept only references produced by the same session. An
+    implementation MUST reject missing, detached, cross-document, and
+    out-of-scope references. Attribute mutation MUST be limited to
+    <code>data-*</code>, <code>aria-*</code>, and <code>title</code>. Passwords,
+    hidden inputs, one-time codes, and payment-control values MUST be redacted,
+    MUST remain classified as sensitive for the lifetime of their element
+    reference, and MUST NOT be writable through built-in page tools.
+  </p>
+
+  <aside class="example" title="Read and update a bounded part of the page">
+    <pre class="js">
+const session = await window.llm.requestSession({
+  page: { access: "read-write", scope: "#editor" }
+});
+
+const result = await session.run(
+  "Find #draft-status, change its text to Ready, and explain what changed."
+);
+
+console.log(result.steps, result.pageToolExecutions);
+    </pre>
+  </aside>
+
+  <p>
+    A scope is resolved using <code>document.querySelector()</code>. Every query
+    and mutation MUST remain below that root. Normal DOM boundaries apply:
+    selectors do not cross documents, cross-origin frames, or closed shadow
+    roots. Extension implementations SHOULD execute page operations in an
+    isolated content-script world and bind them to the initiating frame.
+  </p>
 </section>
 
 <section id="messages">
@@ -663,6 +755,23 @@ dictionary CompletionResult {
   required TokenUsage usage;
   required FinishReason finishReason;
   sequence&lt;ToolCall&gt; toolCalls;
+};
+
+dictionary AgentResult : CompletionResult {
+  required unsigned long steps;
+  required AgentStopReason stopReason;
+  sequence&lt;PageToolExecution&gt; pageToolExecutions = [];
+};
+
+enum AgentStopReason {
+  "complete",
+  "custom_tool",
+  "max_steps"
+};
+
+dictionary PageToolExecution {
+  required ToolCall call;
+  required ToolResult result;
 };
 
 dictionary TokenUsage {

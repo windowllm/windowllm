@@ -10,6 +10,15 @@
 </head>
 <body>
   <h1>WindowLLM extension E2E</h1>
+  <section id="page-agent-fixture">
+    <p id="page-agent-target">Original page text</p>
+    <div id="page-agent-controls">
+      <button id="page-agent-button" type="button">Run action</button>
+      <input id="page-agent-input" value="original">
+      <p id="page-agent-text">Original controlled text</p>
+      <div id="page-agent-attributes" data-remove="yes">Attribute target</div>
+    </div>
+  </section>
   <pre id="results">Running…</pre>
   <script type="module">
     import { runWindowLLMContract } from '/window-llm-contract.mjs';

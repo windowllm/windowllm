@@ -7,14 +7,14 @@ Use the developer guide for implementation examples and the specification for th
 Important integration notes:
 
 - Load `https://windowllm.org/llm.js`, then feature-detect `window.llm` before using it.
-- Request capabilities rather than a specific provider. Start a chat session with `window.llm.requestSession()` and call `complete()` or `stream()` on the returned session.
+- Request capabilities rather than a specific provider. Start a chat session with `window.llm.requestSession()` and call `complete()` or `stream()` on the returned session. Sessions with a `page` access request can call `run()` to execute a bounded local CSS-selector tool loop.
 - API keys remain in the user's vault and are never exposed to the calling website.
 - The iframe implementation works without an install in supported browsers. Safari and local models generally require the WindowLLM browser extension.
 - WindowLLM is an unofficial web-platform proposal with a working reference implementation, not a W3C Standard.
 
 ## Documentation
 
-- [Developer guide](https://windowllm.org/docs/): Example-driven introduction covering setup, sessions, streaming, tool calling, structured output, embeddings, permissions, model discovery, and errors.
+- [Developer guide](https://windowllm.org/docs/): Example-driven introduction covering setup, sessions, streaming, tool calling, local page tools, structured output, embeddings, permissions, model discovery, and errors.
 - [Specification](https://windowllm.org/spec/): Normative API reference, including WebIDL, algorithms, security requirements, privacy considerations, and conformance rules.
 - [API entry point](https://windowllm.org/spec/#infrastructure): Exact contract for `window.llm`, feature detection, capabilities, permissions, model discovery, sessions, and embeddings.
 - [Security considerations](https://windowllm.org/spec/#security): Threat model, key isolation, origin validation, rate limiting, transport, storage, and client-library integrity.
@@ -25,6 +25,7 @@ Important integration notes:
 - [Basic completion](https://windowllm.org/demo/basic/): Minimal session request and one-shot completion.
 - [Streaming](https://windowllm.org/demo/streaming/): Consume completion chunks with an async iterator.
 - [Tool calling](https://windowllm.org/demo/tools/): Define tools and handle model tool calls.
+- [Local page tools](https://windowllm.org/demo/page-tools/): Run scoped `querySelector()` and controlled page mutations while inspecting the complete local execution trace.
 - [Model capabilities](https://windowllm.org/demo/capabilities/): Discover models and match required or preferred capabilities.
 
 ## Source

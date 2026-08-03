@@ -7,6 +7,18 @@
  * This approach works across Chrome, Firefox, and Safari.
  */
 
+import { runPageToolLoop } from '@windowllm/page-tools';
+import type {
+  AgentResult,
+  AgentRunOptions,
+  CompletionResult,
+  Message,
+  SessionInput,
+  SessionOptions,
+  ToolDefinition,
+  ToolResult,
+} from '@windowllm/types';
+
 declare const __WINDOWLLM_EXTENSION_VERSION__: string;
 
 // Message ID counter for request/response correlation
@@ -221,11 +233,12 @@ window.addEventListener('windowllm:response', ((event: CustomEvent) => {
  */
 class ExtensionSession {
   readonly id: string;
-  private _messages: Array<{ role: string; content: string }> = [];
-  private options: unknown;
+  private _messages: Message[] = [];
+  private _tools: ToolDefinition[] = [];
+  private options?: SessionOptions;
   private _model: unknown = null;
 
-  constructor(options?: unknown) {
+  constructor(options?: SessionOptions) {
     this.id = crypto.randomUUID();
     this.options = options;
   }
@@ -234,12 +247,13 @@ class ExtensionSession {
     const result = await sendToContentScript('session_init', {
       sessionId: this.id,
       options: this.options,
-    }) as { model?: unknown; error?: string };
+    }) as { model?: unknown; tools?: ToolDefinition[]; error?: string };
 
     if (result.error) {
       throw new Error(result.error);
     }
     this._model = result.model;
+    this._tools = result.tools || [];
   }
 
   get model() {
@@ -268,38 +282,76 @@ class ExtensionSession {
   }
 
   get tools() {
-    return [];
+    return this._tools;
   }
 
   get capabilities() {
     return (this.model as { capabilities: unknown }).capabilities;
   }
 
-  async complete(input: string | object | object[]): Promise<unknown> {
-    const messages = this.buildMessages(input);
+  async complete(input: SessionInput): Promise<CompletionResult> {
+    return this.completeTurn(input, false);
+  }
+
+  private async completeTurn(input: SessionInput, pageRun: boolean): Promise<CompletionResult> {
+    const result = await this.requestTurn(this.buildMessages(input), pageRun);
+
+    this.appendInput(input);
+    this._messages.push(result.message);
+    return result;
+  }
+
+  private async continuePageTurn(): Promise<CompletionResult> {
+    const result = await this.requestTurn([...this._messages], true);
+    this._messages.push(result.message);
+    return result;
+  }
+
+  private async requestTurn(messages: Message[], pageRun: boolean): Promise<CompletionResult> {
     const result = await sendToContentScript('completion', {
       sessionId: this.id,
       messages,
       stream: false,
+      pageRun,
       options: this.options,
-    }) as { message?: { role: string; content: string }; error?: string };
+    }) as CompletionResult & { error?: string };
 
     if (result.error) {
       throw new Error(result.error);
     }
 
-    // Add to history
-    if (typeof input === 'string') {
-      this._messages.push({ role: 'user', content: input });
-    }
-    if (result.message) {
-      this._messages.push(result.message);
-    }
-
+    if (!result.message) throw new Error('Completion returned an invalid response.');
     return result;
   }
 
-  async *stream(input: string | object | object[]): AsyncIterable<unknown> {
+  async run(
+    input: SessionInput,
+    options?: AgentRunOptions,
+  ): Promise<AgentResult> {
+    if (!this.options?.page) {
+      throw new Error('session.run() requires page access in requestSession().');
+    }
+
+    let firstTurn = true;
+    return runPageToolLoop({
+      maxSteps: options?.maxSteps,
+      signal: options?.signal,
+      complete: async _toolMessages => {
+        if (firstTurn) {
+          firstTurn = false;
+          return this.completeTurn(input, true);
+        }
+        return this.continuePageTurn();
+      },
+      execute: async call => sendToContentScript('page_tool_execute', {
+        sessionId: this.id,
+        call,
+      }) as Promise<ToolResult>,
+      recordToolMessages: messages => this._messages.push(...messages),
+    });
+  }
+
+  async *stream(input: SessionInput): AsyncIterable<unknown> {
     const messages = this.buildMessages(input);
 
     // Set up streaming listener
@@ -346,9 +398,7 @@ class ExtensionSession {
       }
 
       // Add to history
-      if (typeof input === 'string') {
-        this._messages.push({ role: 'user', content: input });
-      }
+      this.appendInput(input);
       this._messages.push({ role: 'assistant', content: accumulated });
     } finally {
       window.removeEventListener('windowllm:stream', streamHandler);
@@ -357,29 +407,40 @@ class ExtensionSession {
 
   async clone(): Promise<ExtensionSession> {
     const cloned = new ExtensionSession(this.options);
+    await cloned.initialize();
     cloned._messages = [...this._messages];
-    cloned._model = this._model;
     return cloned;
   }
 
   reset(): void {
     this._messages = [];
+    void sendToContentScriptRaw('session_reset', { sessionId: this.id });
   }
 
   destroy(): void {
     sendToContentScript('session_destroy', { sessionId: this.id });
   }
 
-  private buildMessages(input: string | object | object[]) {
+  private buildMessages(input: SessionInput): Message[] {
     const messages = [...this._messages];
     if (typeof input === 'string') {
       messages.push({ role: 'user', content: input });
     } else if (Array.isArray(input)) {
-      messages.push(...input as Array<{ role: string; content: string }>);
+      messages.push(...input);
     } else {
-      messages.push(input as { role: string; content: string });
+      messages.push(input);
     }
     return messages;
+  }
+
+  private appendInput(input: SessionInput): void {
+    if (typeof input === 'string') {
+      this._messages.push({ role: 'user', content: input });
+    } else if (Array.isArray(input)) {
+      this._messages.push(...input);
+    } else {
+      this._messages.push(input);
+    }
   }
 }
 
@@ -507,7 +568,7 @@ const windowLLM = {
     },
   },
 
-  async requestSession(options?: unknown) {
+  async requestSession(options?: SessionOptions) {
     const session = new ExtensionSession(options);
     await session.initialize();
     return session;

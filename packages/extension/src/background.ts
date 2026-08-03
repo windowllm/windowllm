@@ -11,7 +11,18 @@
 
 import { createAnthropicAdapter, createOpenAIAdapter, createOpenRouterAdapter, createOllamaAdapter, createGeminiAdapter } from '@windowllm/adapters';
 import type { ProviderAdapter, NormalizedRequest } from '@windowllm/adapters';
-import type { LLMModel, Message } from '@windowllm/types';
+import {
+  getPageToolDefinitions,
+  isPageToolName,
+} from '@windowllm/page-tools';
+import type {
+  LLMModel,
+  Message,
+  PageAccessOptions,
+  SessionSettings,
+  ToolCall,
+  ToolDefinition,
+} from '@windowllm/types';
 
 declare const __WINDOWLLM_EXTENSION_E2E__: boolean;
 declare const __WINDOWLLM_EXTENSION_E2E_URL__: string;
@@ -364,8 +375,10 @@ interface Session {
   origin: string;
   model: LLMModel;
   adapter: ProviderAdapter;
-  messages: Array<{ role: string; content: string }>;
   systemPrompt?: string;
+  tools: ToolDefinition[];
+  page?: PageAccessOptions;
+  settings?: SessionSettings;
 }
 
 // Active sessions
@@ -383,6 +396,9 @@ interface StoredSession {
   origin: string;
   modelId: string;
   systemPrompt?: string;
+  tools: ToolDefinition[];
+  page?: PageAccessOptions;
+  settings?: SessionSettings;
 }
 
 /**
@@ -397,6 +413,9 @@ async function persistSession(session: Session): Promise<void> {
     origin: session.origin,
     modelId: session.model.id,
     systemPrompt: session.systemPrompt,
+    tools: session.tools,
+    page: session.page,
+    settings: session.settings,
   };
   await extensionBrowser.storage.session.set({ [SESSION_STORE_PREFIX + session.id]: stored });
 }
@@ -419,8 +438,10 @@ async function restoreSession(sessionId: string, origin: string): Promise<Sessio
     origin: stored.origin,
     model,
     adapter,
-    messages: [],
     systemPrompt: stored.systemPrompt,
+    tools: stored.tools || [],
+    page: stored.page,
+    settings: stored.settings,
   };
   sessions.set(sessionId, session);
   return session;
@@ -558,9 +579,18 @@ function getAdapterForModel(modelId: string): ProviderAdapter | null {
  * Handle session initialization
  */
 async function handleSessionInit(
-  payload: { sessionId: string; options?: { model?: string; systemPrompt?: string } },
+  payload: {
+    sessionId: string;
+    options?: {
+      model?: string;
+      systemPrompt?: string;
+      tools?: ToolDefinition[];
+      page?: PageAccessOptions;
+      settings?: SessionSettings;
+    };
+  },
   origin: string
-): Promise<{ model: LLMModel }> {
+): Promise<{ model: LLMModel; tools: ToolDefinition[] }> {
   const models = await getModels();
 
   if (models.length === 0) {
@@ -577,6 +607,20 @@ async function handleSessionInit(
     }
   }
 
+  if (payload.options?.page && !model.capabilities.tools) {
+    throw new Error(`Model ${model.id} does not support tools required for page access.`);
+  }
+
+  const siteTools = payload.options?.tools || [];
+  if (payload.options?.page && siteTools.length > 0) {
+    throw new Error('Site-defined tools and page access cannot be combined in the same session.');
+  }
+  const reservedTool = siteTools.find(tool => isPageToolName(tool.name));
+  if (reservedTool) {
+    throw new Error(`Tool name ${reservedTool.name} is reserved for WindowLLM page tools.`);
+  }
+  const pageTools = payload.options?.page ? getPageToolDefinitions(payload.options.page) : [];
+
   const adapter = getAdapterForModel(model.id);
   if (!adapter) {
     throw new Error(`No adapter available for model ${model.id}`);
@@ -587,21 +631,29 @@ async function handleSessionInit(
     origin,
     model,
     adapter,
-    messages: [],
     systemPrompt: payload.options?.systemPrompt,
+    tools: siteTools,
+    page: payload.options?.page,
+    settings: payload.options?.settings,
   };
 
   sessions.set(payload.sessionId, session);
   await persistSession(session);
 
-  return { model };
+  return { model, tools: [...siteTools, ...pageTools] };
 }
 
 /**
  * Handle completion request
  */
 async function handleCompletion(
-  payload: { sessionId: string; messages: Array<{ role: string; content: string }>; stream?: boolean; options?: { model?: string } },
+  payload: {
+    sessionId: string;
+    messages: Message[];
+    stream?: boolean;
+    pageRun?: boolean;
+    options?: { model?: string };
+  },
   sender: chrome.runtime.MessageSender,
   origin: string
 ): Promise<unknown> {
@@ -617,6 +669,9 @@ async function handleCompletion(
   if (session.origin !== origin) {
     throw new Error('Session does not belong to this origin.');
   }
+  if (payload.pageRun && !session.page) {
+    throw new Error('Page tools require page access in requestSession().');
+  }
 
   // Get the model ID from options or use session model
   const modelId = payload.options?.model || session.model.id;
@@ -629,6 +684,12 @@ async function handleCompletion(
     model: actualModelId,
     messages: payload.messages as Message[],
     systemPrompt: session.systemPrompt,
+    tools: payload.pageRun
+      ? getPageToolDefinitions(session.page!)
+      : (session.tools.length > 0 ? session.tools : undefined),
+    temperature: session.settings?.temperature,
+    maxTokens: session.settings?.maxTokens,
+    stopSequences: session.settings?.stopSequences,
     stream: payload.stream,
   };
 
@@ -636,6 +697,7 @@ async function handleCompletion(
     // Handle streaming
     let accumulated = '';
     let usage: { inputTokens: number; outputTokens: number; totalTokens: number } | undefined;
+    const toolCalls: ToolCall[] = [];
     const tabId = sender.tab?.id;
     // Route chunks back to the exact frame that made the request, so a sibling
     // (e.g. a cross-origin ad iframe) in the same tab cannot observe them.
@@ -662,18 +724,35 @@ async function handleCompletion(
           outputTokens: chunk.usage.outputTokens ?? 0,
           totalTokens: chunk.usage.totalTokens ?? 0,
         };
+      } else if (chunk.type === 'tool_call' && chunk.toolCall?.complete) {
+        toolCalls.push({
+          id: chunk.toolCall.id,
+          name: chunk.toolCall.name,
+          arguments: JSON.parse(chunk.toolCall.arguments || '{}') as Record<string, unknown>,
+        });
       }
       // 'done' chunk from adapter is ignored - we send our own below
     }
 
     // Send done with usage
     if (tabId != null) {
+      const finishReason = toolCalls.length > 0 ? 'tool_use' : 'complete';
       extensionBrowser.tabs.sendMessage(tabId, {
         type: 'stream_chunk',
         sessionId: payload.sessionId,
         chunk: {
           type: 'done',
-          result: { message: { role: 'assistant', content: accumulated }, usage },
+          finishReason,
+          result: {
+            message: {
+              role: 'assistant',
+              content: accumulated,
+              toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+            },
+            usage,
+            finishReason,
+            toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+          },
         },
       }, sendOptions);
     }
@@ -686,6 +765,7 @@ async function handleCompletion(
       message: result.message,
       usage: result.usage,
       finishReason: result.finishReason,
+      toolCalls: result.message.toolCalls,
     };
   }
 }

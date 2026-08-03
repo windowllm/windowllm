@@ -21,6 +21,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@windowllm/page-tools": "*",
     "@windowllm/protocol": "*",
     "@windowllm/types": "*"
   },

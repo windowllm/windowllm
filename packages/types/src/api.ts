@@ -4,7 +4,14 @@
  * The main API surface exposed on `window.llm`
  */
 
-import type { Message, CompletionResult, StreamChunk, ToolDefinition } from './messages.js';
+import type {
+  Message,
+  CompletionResult,
+  StreamChunk,
+  ToolCall,
+  ToolDefinition,
+  ToolResult,
+} from './messages.js';
 import type { ModelCapabilities, ModelLimits, LLMCapabilities } from './capabilities.js';
 
 /**
@@ -119,6 +126,9 @@ export interface SessionOptions {
   /** Tools available in this session */
   tools?: ToolDefinition[];
 
+  /** Local page tools exposed to the model for this session */
+  page?: PageAccessOptions;
+
   /** Response format constraints */
   responseFormat?: ResponseFormat;
 
@@ -127,6 +137,53 @@ export interface SessionOptions {
 
   /** Abort signal for cancellation */
   signal?: AbortSignal;
+}
+
+/** The local DOM authority granted to a session. */
+export type PageAccessMode = 'read' | 'read-write';
+
+/**
+ * Options for exposing CSS-selector-based page tools to a model.
+ *
+ * The optional scope is resolved with document.querySelector(). Every model
+ * query and mutation is then constrained to that element.
+ */
+export interface PageAccessOptions {
+  /** Read-only querying, or querying plus controlled DOM mutations. */
+  access: PageAccessMode;
+
+  /** Optional CSS selector that bounds every page operation. */
+  scope?: string;
+}
+
+/** Options for an automatic model/tool loop. */
+export interface AgentRunOptions {
+  /** Maximum model turns, including the initial request. Defaults to 8. */
+  maxSteps?: number;
+
+  /** Abort the run between model or tool steps. */
+  signal?: AbortSignal;
+}
+
+/** A page tool call and its locally-produced result. */
+export interface PageToolExecution {
+  call: ToolCall;
+  result: ToolResult;
+}
+
+/** Why an automatic agent run returned control to the caller. */
+export type AgentStopReason = 'complete' | 'custom_tool' | 'max_steps';
+
+/** Final result from an automatic model/page-tool run. */
+export interface AgentResult extends CompletionResult {
+  /** Number of model turns used by the run. */
+  steps: number;
+
+  /** Why the automatic loop stopped. */
+  stopReason: AgentStopReason;
+
+  /** Page operations performed locally during the run. */
+  pageToolExecutions: PageToolExecution[];
 }
 
 /**
@@ -193,6 +250,12 @@ export interface LLMSession {
    * Send a message and get a complete response
    */
   complete(input: SessionInput): Promise<CompletionResult>;
+
+  /**
+   * Run an automatic loop for built-in page tools until the model returns a
+   * final answer, requests a site-defined tool, or reaches the step limit.
+   */
+  run(input: SessionInput, options?: AgentRunOptions): Promise<AgentResult>;
 
   /**
    * Send a message and stream the response

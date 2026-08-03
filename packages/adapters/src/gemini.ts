@@ -285,6 +285,7 @@ export class GeminiAdapter implements ProviderAdapter {
 
   private convertMessages(messages: Message[]): GeminiContent[] {
     const result: GeminiContent[] = [];
+    const toolNames = new Map<string, string>();
     for (const msg of messages) {
       if (msg.role === 'user') {
         result.push({ role: 'user', parts: this.convertContent(msg.content) });
@@ -297,15 +298,17 @@ export class GeminiAdapter implements ProviderAdapter {
         }
         if (msg.toolCalls?.length) {
           for (const tc of msg.toolCalls) {
+            toolNames.set(tc.id, tc.name);
             parts.push({ functionCall: { name: tc.name, args: tc.arguments } });
           }
         }
         if (parts.length > 0) result.push({ role: 'model', parts });
       } else if (msg.role === 'tool') {
         const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+        const name = msg.toolCallId ? toolNames.get(msg.toolCallId) : undefined;
         result.push({
           role: 'user',
-          parts: [{ functionResponse: { name: msg.toolCallId || 'tool', response: { result: content } } }],
+          parts: [{ functionResponse: { name: name || 'tool', response: { result: content } } }],
         });
       }
     }
@@ -337,7 +340,7 @@ export class GeminiAdapter implements ProviderAdapter {
       if (part.text) textContent += part.text;
       else if (part.functionCall) {
         toolCalls.push({
-          id: `call_${part.functionCall.name}`,
+          id: `call_${toolCalls.length}_${part.functionCall.name}`,
           name: part.functionCall.name,
           arguments: part.functionCall.args ?? {},
         });

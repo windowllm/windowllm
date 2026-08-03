@@ -8,10 +8,14 @@
  * using "world": "MAIN" for Chrome, with fallback injection for Firefox/Safari.
  */
 
+import { PageToolExecutor } from '@windowllm/page-tools';
+import type { PageAccessOptions, ToolCall, ToolResult } from '@windowllm/types';
+
 // Firefox exposes the Promise-based `browser` namespace. Chrome and Safari
 // use the compatible `chrome` fallback.
 declare const browser: typeof chrome;
 const extensionBrowser = typeof browser !== 'undefined' ? browser : chrome;
+const pageExecutors = new Map<string, PageToolExecutor>();
 
 // Fallback injection for browsers that don't support "world": "MAIN"
 // Chrome 102+ supports it via manifest, Firefox and Safari need manual injection
@@ -59,6 +63,21 @@ window.addEventListener('windowllm:request', (async (event: CustomEvent) => {
         type: 'open_popup',
         payload,
       });
+    } else if (type === 'page_tool_execute') {
+      const { sessionId, call } = payload as { sessionId: string; call: ToolCall };
+      const executor = pageExecutors.get(sessionId);
+      response = executor
+        ? await executor.execute(call)
+        : {
+            toolCallId: call.id,
+            content: { error: 'Page tool session is unavailable in this document.' },
+            success: false,
+            error: 'Page tool session is unavailable in this document.',
+          } satisfies ToolResult;
+    } else if (type === 'session_reset') {
+      const sessionId = (payload as { sessionId?: string }).sessionId;
+      if (sessionId) pageExecutors.get(sessionId)?.destroy();
+      response = { success: true };
     } else {
       // Forward to background script
       response = await extensionBrowser.runtime.sendMessage({
@@ -67,12 +86,32 @@ window.addEventListener('windowllm:request', (async (event: CustomEvent) => {
       });
     }
 
+    if (type === 'session_init' && response && typeof response === 'object' && 'model' in response) {
+      const { sessionId, options } = payload as {
+        sessionId: string;
+        options?: { page?: PageAccessOptions };
+      };
+      pageExecutors.get(sessionId)?.destroy();
+      pageExecutors.delete(sessionId);
+      if (options?.page) {
+        pageExecutors.set(sessionId, new PageToolExecutor(options.page, document));
+      }
+    }
+
+    if (type === 'session_destroy') {
+      const sessionId = (payload as { sessionId?: string }).sessionId;
+      if (sessionId) {
+        pageExecutors.get(sessionId)?.destroy();
+        pageExecutors.delete(sessionId);
+      }
+    }
+
     // Send response back to inject.js
     window.dispatchEvent(new CustomEvent('windowllm:response', {
       detail: JSON.stringify({ id, success: true, data: response })
     }));
   } catch (error) {
-    console.error('[WindowLLM Content] Background error:', error);
+    console.error('[WindowLLM Content] Request error:', error);
     // Send error back to inject.js
     window.dispatchEvent(new CustomEvent('windowllm:response', {
       detail: JSON.stringify({

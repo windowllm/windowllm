@@ -10,6 +10,7 @@ on:
     paths:
       - 'packages/vault/**'
       - 'packages/client/**'
+      - 'packages/page-tools/**'
       - 'packages/adapters/**'
       - 'packages/protocol/**'
       - 'packages/types/**'
@@ -41,7 +42,7 @@ jobs:
       - run: npm ci
 
       # Build in dependency order: shared packages -> client (llm.js) -> vault.
-      - run: npm run build --workspace=@windowllm/types --workspace=@windowllm/protocol --workspace=@windowllm/adapters
+      - run: npm run build --workspace=@windowllm/types --workspace=@windowllm/protocol --workspace=@windowllm/adapters --workspace=@windowllm/page-tools
       - run: npm run build --workspace=@windowllm/client
       - run: npm run build --workspace=@windowllm/vault
 

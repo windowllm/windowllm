@@ -20,6 +20,9 @@ import type {
   LLMCapabilities,
   SessionOptions,
   SessionInput,
+  AgentRunOptions,
+  AgentResult,
+  PageAccessOptions,
   EmbeddingOptions,
   EmbeddingSession,
   EmbeddingResult,
@@ -32,6 +35,13 @@ import type {
   CapabilityName,
   CapabilityInfo,
 } from '@windowllm/types';
+
+import {
+  PageToolExecutor,
+  getPageToolDefinitions,
+  isPageToolName,
+  runPageToolLoop,
+} from '@windowllm/page-tools';
 
 import {
   createClientMessage,
@@ -727,10 +737,14 @@ class ClientSession implements LLMSession {
   private client: WindowLLMClient;
   private _messages: Message[] = [];
   private _tools: ToolDefinition[] = [];
+  private siteTools: ToolDefinition[] = [];
+  private pageTools: ToolDefinition[] = [];
   private _model: LLMModel | null = null;
   private requestedModel?: string;
   private systemPrompt?: string;
   private settings: SessionOptions['settings'];
+  private pageOptions?: PageAccessOptions;
+  private pageExecutor?: PageToolExecutor;
   private destroyed = false;
 
   constructor(client: WindowLLMClient, options?: SessionOptions) {
@@ -738,7 +752,18 @@ class ClientSession implements LLMSession {
     this.id = client.getSessionToken() || crypto.randomUUID();
     this.client = client;
     this.systemPrompt = options?.systemPrompt;
-    this._tools = options?.tools || [];
+    this.siteTools = options?.tools ? [...options.tools] : [];
+    this.pageOptions = options?.page ? { ...options.page } : undefined;
+    if (this.pageOptions && this.siteTools.length > 0) {
+      throw new Error('Site-defined tools and page access cannot be combined in the same session.');
+    }
+    this.pageTools = this.pageOptions ? getPageToolDefinitions(this.pageOptions) : [];
+    const reservedTool = this.siteTools.find(tool => isPageToolName(tool.name));
+    if (reservedTool) {
+      throw new Error(`Tool name ${reservedTool.name} is reserved for WindowLLM page tools.`);
+    }
+    this._tools = [...this.siteTools, ...this.pageTools];
+    this.pageExecutor = this.pageOptions ? new PageToolExecutor(this.pageOptions, document) : undefined;
     this.settings = options?.settings;
     this.requestedModel = options?.model;
 
@@ -759,7 +784,11 @@ class ClientSession implements LLMSession {
         // Use the first available model as default
         this._model = models[0] ?? null;
       }
+      if (this.pageOptions && this._model && !this._model.capabilities.tools) {
+        throw new Error(`Model ${this._model.id} does not support tools required for page access.`);
+      }
     } catch (error) {
+      if (this.pageOptions) throw error;
       console.warn('WindowLLM: Failed to fetch model info', error);
     }
   }
@@ -805,14 +834,36 @@ class ClientSession implements LLMSession {
   }
 
   async complete(input: SessionInput): Promise<CompletionResult> {
+    return this.completeWithTools(input, this.siteTools);
+  }
+
+  private async completeWithTools(
+    input: SessionInput,
+    tools: readonly ToolDefinition[],
+  ): Promise<CompletionResult> {
     this.checkDestroyed();
+    const result = await this.requestCompletion(this.buildMessages(input), tools);
 
-    const messages = this.buildMessages(input);
+    this.appendInput(input);
+    this._messages.push(result.message);
+    return result;
+  }
 
+  private async continueWithTools(tools: readonly ToolDefinition[]): Promise<CompletionResult> {
+    this.checkDestroyed();
+    const result = await this.requestCompletion([...this._messages], tools);
+    this._messages.push(result.message);
+    return result;
+  }
+
+  private async requestCompletion(
+    messages: Message[],
+    tools: readonly ToolDefinition[],
+  ): Promise<CompletionResult> {
     const response = await this.client.sendRequest<CompletionResponse>('completion', {
       sessionId: this.id,
       messages,
-      tools: this._tools.length > 0 ? this._tools : undefined,
+      tools: tools.length > 0 ? [...tools] : undefined,
       stream: false,
       options: {
         model: this.model.id,
@@ -826,19 +877,29 @@ class ClientSession implements LLMSession {
       throw new Error(response.payload.error?.message || 'Completion failed');
     }
 
-    const result = response.payload.result;
+    return response.payload.result;
+  }
 
-    // Add messages to history
-    if (typeof input === 'string') {
-      this._messages.push({ role: 'user', content: input });
-    } else if (Array.isArray(input)) {
-      this._messages.push(...input);
-    } else {
-      this._messages.push(input);
+  async run(input: SessionInput, options?: AgentRunOptions): Promise<AgentResult> {
+    this.checkDestroyed();
+    if (!this.pageExecutor) {
+      throw new Error('session.run() requires a page access request in requestSession().');
     }
-    this._messages.push(result.message);
 
-    return result;
+    let firstTurn = true;
+    return runPageToolLoop({
+      maxSteps: options?.maxSteps,
+      signal: options?.signal,
+      complete: async _toolMessages => {
+        if (firstTurn) {
+          firstTurn = false;
+          return this.completeWithTools(input, this.pageTools);
+        }
+        return this.continueWithTools(this.pageTools);
+      },
+      execute: call => this.pageExecutor!.execute(call),
+      recordToolMessages: messages => this._messages.push(...messages),
+    });
   }
 
   async *stream(input: SessionInput): AsyncIterable<StreamChunk> {
@@ -857,7 +918,7 @@ class ClientSession implements LLMSession {
       {
         sessionId: this.id,
         messages,
-        tools: this._tools.length > 0 ? this._tools : undefined,
+        tools: this.siteTools.length > 0 ? this.siteTools : undefined,
         stream: true,
         options: {
           model: this.model.id,
@@ -939,7 +1000,8 @@ class ClientSession implements LLMSession {
     this.checkDestroyed();
     const cloned = new ClientSession(this.client, {
       systemPrompt: this.systemPrompt,
-      tools: [...this._tools],
+      tools: [...this.siteTools],
+      page: this.pageOptions ? { ...this.pageOptions } : undefined,
       settings: this.settings,
       initialMessages: [...this._messages],
     });
@@ -950,10 +1012,12 @@ class ClientSession implements LLMSession {
   reset(): void {
     this.checkDestroyed();
     this._messages = [];
+    this.pageExecutor?.destroy();
   }
 
   destroy(): void {
     this.destroyed = true;
+    this.pageExecutor?.destroy();
   }
 
   private checkDestroyed(): void {
@@ -978,6 +1042,16 @@ class ClientSession implements LLMSession {
     }
 
     return messages;
+  }
+
+  private appendInput(input: SessionInput): void {
+    if (typeof input === 'string') {
+      this._messages.push({ role: 'user', content: input });
+    } else if (Array.isArray(input)) {
+      this._messages.push(...input);
+    } else {
+      this._messages.push(input);
+    }
   }
 }
 

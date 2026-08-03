@@ -16,8 +16,8 @@ const model = {
   details: {
     parent_model: '',
     format: 'gguf',
-    family: 'llama',
-    families: ['llama'],
+    family: 'qwen',
+    families: ['qwen'],
     parameter_size: '1B',
     quantization_level: 'Q4_0',
   },
@@ -126,6 +126,174 @@ export async function startExtensionE2EServer({ port = 3199, resultFile } = {}) 
         })}\n`);
       } else {
         metrics.completions += 1;
+        const messages = Array.isArray(body.messages) ? body.messages : [];
+        const lastMessage = messages.at(-1);
+        if (lastMessage?.role === 'user' && lastMessage.content === 'Extension page complete stays single-turn') {
+          const tools = Array.isArray(body.tools) ? body.tools : [];
+          const leaked = tools.some(tool => tool.function?.name?.startsWith('windowllm_page_'));
+          json(response, 200, {
+            model: 'extension-e2e',
+            message: { role: 'assistant', content: leaked ? 'Page tools leaked into complete.' : 'Page tools stayed in run.' },
+            done: true,
+            done_reason: 'stop',
+            prompt_eval_count: 4,
+            eval_count: 3,
+          });
+          return;
+        }
+        if (lastMessage?.role === 'user' && lastMessage.content === 'Extension E2E aborted page agent') {
+          const priorQueryResult = messages.find(message => {
+            if (message.role !== 'tool') return false;
+            try {
+              return Boolean(JSON.parse(message.content || '{}').match?.ref);
+            } catch {
+              return false;
+            }
+          });
+          const ref = JSON.parse(priorQueryResult?.content || '{}').match?.ref;
+          await new Promise(resolve => setTimeout(resolve, 75));
+          json(response, 200, {
+            model: 'extension-e2e',
+            message: {
+              role: 'assistant',
+              content: '',
+              tool_calls: [{
+                function: {
+                  name: 'windowllm_page_set_text_content',
+                  arguments: { ref, value: 'This mutation must be cancelled' },
+                },
+              }],
+            },
+            done: true,
+            done_reason: 'tool_calls',
+            prompt_eval_count: 4,
+            eval_count: 3,
+          });
+          return;
+        }
+        if (lastMessage?.role === 'user' && lastMessage.content === 'Extension E2E page agent') {
+          json(response, 200, {
+            model: 'extension-e2e',
+            message: {
+              role: 'assistant',
+              content: '',
+              tool_calls: [{
+                function: {
+                  name: 'windowllm_page_query_selector',
+                  arguments: { selector: '#page-agent-target' },
+                },
+              }],
+            },
+            done: true,
+            done_reason: 'tool_calls',
+            prompt_eval_count: 4,
+            eval_count: 3,
+          });
+          return;
+        }
+        if (lastMessage?.role === 'user' && lastMessage.content === 'Extension E2E mutation matrix') {
+          json(response, 200, {
+            model: 'extension-e2e',
+            message: {
+              role: 'assistant',
+              content: '',
+              tool_calls: [{
+                function: {
+                  name: 'windowllm_page_query_selector_all',
+                  arguments: { selector: '#page-agent-controls > *' },
+                },
+              }],
+            },
+            done: true,
+            done_reason: 'tool_calls',
+            prompt_eval_count: 4,
+            eval_count: 3,
+          });
+          return;
+        }
+        if (lastMessage?.role === 'tool') {
+          const previousCall = messages.at(-2)?.tool_calls?.[0]?.function?.name;
+          if (previousCall === 'windowllm_page_query_selector') {
+            const queried = JSON.parse(lastMessage.content || '{}');
+            json(response, 200, {
+              model: 'extension-e2e',
+              message: {
+                role: 'assistant',
+                content: '',
+                tool_calls: [{
+                  function: {
+                    name: 'windowllm_page_set_text_content',
+                    arguments: { ref: queried.match.ref, value: 'Changed by the local page agent' },
+                  },
+                }],
+              },
+              done: true,
+              done_reason: 'tool_calls',
+              prompt_eval_count: 4,
+              eval_count: 3,
+            });
+            return;
+          }
+          if (previousCall === 'windowllm_page_query_selector_all') {
+            const queried = JSON.parse(lastMessage.content || '{}');
+            const [button, input, text, attributes] = queried.matches;
+            json(response, 200, {
+              model: 'extension-e2e',
+              message: {
+                role: 'assistant',
+                content: '',
+                tool_calls: [
+                  {
+                    function: {
+                      name: 'windowllm_page_click',
+                      arguments: { ref: button.ref },
+                    },
+                  },
+                  {
+                    function: {
+                      name: 'windowllm_page_set_value',
+                      arguments: { ref: input.ref, value: 'updated input' },
+                    },
+                  },
+                  {
+                    function: {
+                      name: 'windowllm_page_set_text_content',
+                      arguments: { ref: text.ref, value: 'updated text' },
+                    },
+                  },
+                  {
+                    function: {
+                      name: 'windowllm_page_set_attribute',
+                      arguments: { ref: attributes.ref, name: 'aria-live', value: 'polite' },
+                    },
+                  },
+                  {
+                    function: {
+                      name: 'windowllm_page_remove_attribute',
+                      arguments: { ref: attributes.ref, name: 'data-remove' },
+                    },
+                  },
+                ],
+              },
+              done: true,
+              done_reason: 'tool_calls',
+              prompt_eval_count: 4,
+              eval_count: 3,
+            });
+            return;
+          }
+          if (previousCall === 'windowllm_page_set_text_content') {
+            json(response, 200, {
+              model: 'extension-e2e',
+              message: { role: 'assistant', content: 'The page element was updated.' },
+              done: true,
+              done_reason: 'stop',
+              prompt_eval_count: 4,
+              eval_count: 3,
+            });
+            return;
+          }
+        }
         json(response, 200, {
           model: 'extension-e2e',
           message: { role: 'assistant', content: 'Extension E2E response' },

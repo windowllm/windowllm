@@ -197,6 +197,7 @@
       <li><a href="#sessions">Sessions &amp; memory</a></li>
       <li><a href="#streaming">Streaming</a></li>
       <li><a href="#tools">Tool calling</a></li>
+      <li><a href="#page-tools">Local page tools</a></li>
       <li><a href="#json">Structured output</a></li>
       <li><a href="#embeddings">Embeddings</a></li>
       <li><a href="#permissions">Permissions</a></li>
@@ -494,9 +495,71 @@ console.<span class="f">log</span>(result.message.content);  <span class="c">// 
       </div>
     </section>
 
+    <!-- PAGE TOOLS -->
+    <section class="doc" id="page-tools">
+      <h2><span class="num">07</span>Local page tools</h2>
+      <p>
+        Let a tool-capable model query the current document with normal CSS
+        selectors. WindowLLM executes every operation locally and sends only a
+        serialized result to the provider. The provider never receives an
+        <code>Element</code> or arbitrary JavaScript access.
+      </p>
+
+      <div class="code">
+        <div class="code-head"><span class="code-dot"><i></i><i></i><i></i></span><span class="code-lang">javascript</span></div>
+<pre><span class="k">const</span> session = <span class="k">await</span> window.llm.<span class="f">requestSession</span>({
+  page: {
+    access: <span class="s">"read-write"</span>,
+    scope: <span class="s">"#editor"</span>
+  },
+  systemPrompt: <span class="s">"Use the page tools to inspect and update only the requested elements."</span>
+});
+
+<span class="k">const</span> result = <span class="k">await</span> session.<span class="f">run</span>(
+  <span class="s">"Find #draft-status, change its text to Ready, and report what changed."</span>
+);
+
+console.<span class="f">log</span>(result.steps);
+console.<span class="f">log</span>(result.stopReason);
+console.<span class="f">table</span>(result.pageToolExecutions);</pre>
+      </div>
+
+      <p>
+        Use <code>access: "read"</code> for
+        <code>querySelector()</code> and <code>querySelectorAll()</code> only.
+        Read-write mode also exposes controlled click, value, text, and
+        application-state attribute operations. Attributes are restricted to
+        <code>data-*</code>, <code>aria-*</code>, and <code>title</code>.
+        Mutation calls use opaque references returned by an earlier query, so
+        the model never manufactures a DOM object.
+      </p>
+
+      <div class="callout">
+        <p><strong>Keep the scope narrow.</strong> A CSS scope is resolved once
+        per operation and bounds every query and write. Sensitive form values
+        remain redacted for the lifetime of their element reference, and agent
+        runs return with <code>stopReason: "max_steps"</code> before executing a
+        terminal tool batch. The default limit is eight model turns.</p>
+      </div>
+
+      <p>
+        Page tools are available only through <code>run()</code>. They are not
+        advertised by <code>complete()</code> or <code>stream()</code>, and page
+        access cannot currently be combined with site-defined tools in one
+        session.
+      </p>
+
+      <p>
+        <a href="/demo/page-tools/">Open the live page-tools workbench</a> to
+        run read-only and read-write tasks against a visible local document.
+        The workbench shows every selector, element reference, result, and DOM
+        change as it happens.
+      </p>
+    </section>
+
     <!-- JSON -->
     <section class="doc" id="json">
-      <h2><span class="num">07</span>Structured output</h2>
+      <h2><span class="num">08</span>Structured output</h2>
       <p>
         Need JSON you can parse instead of prose? Ask for it with
         <code>responseFormat</code>. On models that report the
@@ -526,7 +589,7 @@ console.<span class="f">log</span>(result.message.content);  <span class="c">// 
 
     <!-- EMBEDDINGS -->
     <section class="doc" id="embeddings">
-      <h2><span class="num">08</span>Embeddings</h2>
+      <h2><span class="num">09</span>Embeddings</h2>
       <p>
         For search and similarity, request an embedding session. Vectors come
         back as a <code>Float32Array</code> — ready for a dot product.
@@ -546,7 +609,7 @@ embedder.<span class="f">destroy</span>();</pre>
 
     <!-- PERMISSIONS -->
     <section class="doc" id="permissions">
-      <h2><span class="num">09</span>Permissions</h2>
+      <h2><span class="num">10</span>Permissions</h2>
       <p>
         Access follows the familiar Web Permissions pattern.
         <code>query()</code> checks state without prompting;
@@ -576,7 +639,7 @@ status.onchange = () => {
 
     <!-- DISCOVERY -->
     <section class="doc" id="discovery">
-      <h2><span class="num">10</span>Models &amp; capabilities</h2>
+      <h2><span class="num">11</span>Models &amp; capabilities</h2>
       <p>
         Don't hard-code a model. Ask what the user has, or describe what you need
         and let the vault pick.
@@ -607,7 +670,7 @@ status.onchange = () => {
 
     <!-- ERRORS -->
     <section class="doc" id="errors">
-      <h2><span class="num">11</span>Handling errors</h2>
+      <h2><span class="num">12</span>Handling errors</h2>
       <p>
         Everything rejects with an <code>LLMError</code> carrying a stable
         <code>code</code>. Some are worth retrying — check
@@ -658,7 +721,7 @@ status.onchange = () => {
 
     <!-- NEXT -->
     <section class="doc" id="next">
-      <h2><span class="num">12</span>Where to next</h2>
+      <h2><span class="num">13</span>Where to next</h2>
       <div class="cards">
         <div class="card">
           <h4><a href="/spec/">Read the spec →</a></h4>

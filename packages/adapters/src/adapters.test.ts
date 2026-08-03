@@ -217,4 +217,31 @@ describe('Gemini adapter', () => {
     expect(res.message.content).toBe('hi');
     expect(res.usage.totalTokens).toBe(5);
   });
+
+  it('correlates tool results with the original function name', async () => {
+    let sent: any;
+    globalThis.fetch = vi.fn(async (_url, init: any) => {
+      sent = JSON.parse(init.body);
+      return jsonResponse({
+        candidates: [{ content: { parts: [{ text: 'done' }] }, finishReason: 'STOP' }],
+        usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, totalTokenCount: 2 },
+      });
+    }) as typeof fetch;
+
+    const g = createGeminiAdapter({ apiKey: 'k' });
+    await g.complete({
+      model: 'gemini/gemini-2.0-flash',
+      messages: [
+        { role: 'user', content: 'inspect' },
+        {
+          role: 'assistant',
+          content: '',
+          toolCalls: [{ id: 'call_0_page_query', name: 'page_query', arguments: { selector: '#status' } }],
+        },
+        { role: 'tool', toolCallId: 'call_0_page_query', content: '{"match":null}' },
+      ],
+    });
+
+    expect(sent.contents[2].parts[0].functionResponse.name).toBe('page_query');
+  });
 });

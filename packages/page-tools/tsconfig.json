@@ -4,12 +4,13 @@
     "outDir": "./dist",
     "rootDir": "./src",
     "declaration": true,
-    "declarationMap": true
+    "declarationMap": true,
+    "noEmit": false,
+    "composite": true
   },
   "include": ["src/**/*"],
+  "exclude": ["src/**/*.test.ts"],
   "references": [
-    { "path": "../types" },
-    { "path": "../protocol" },
-    { "path": "../page-tools" }
+    { "path": "../types" }
   ]
 }

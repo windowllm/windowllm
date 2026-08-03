@@ -71,7 +71,7 @@ jobs:
       - run: npm ci
       - name: Build shared packages
         run: |
-          npm run build --workspace=@windowllm/types --workspace=@windowllm/protocol --workspace=@windowllm/adapters
+          npm run build --workspace=@windowllm/types --workspace=@windowllm/protocol --workspace=@windowllm/adapters --workspace=@windowllm/page-tools
           npm run build --workspace=@windowllm/client
 
       - name: Package Chrome
@@ -117,7 +117,7 @@ jobs:
       - run: npm ci
       - name: Build shared packages
         run: |
-          npm run build --workspace=@windowllm/types --workspace=@windowllm/protocol --workspace=@windowllm/adapters
+          npm run build --workspace=@windowllm/types --workspace=@windowllm/protocol --workspace=@windowllm/adapters --workspace=@windowllm/page-tools
           npm run build --workspace=@windowllm/client
 
       - name: Build and package Safari app

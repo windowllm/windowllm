@@ -48,6 +48,14 @@ const session = await window.llm.requestSession({
   tools: [{ name: 'get_weather', ... }]
 });
 
+// Local CSS-selector page tools with an automatic agent loop
+const pageSession = await window.llm.requestSession({
+  page: { access: 'read-write', scope: '#editor' }
+});
+const pageResult = await pageSession.run(
+  'Find #draft-status, change its text to Ready, and report what changed.'
+);
+
 // Model discovery
 const models = await window.llm.models.list();
 const visionModels = await window.llm.models.match({
@@ -214,6 +222,7 @@ packages/
 ├── types/       # @windowllm/types - Shared TypeScript types
 ├── protocol/    # @windowllm/protocol - postMessage protocol
 ├── adapters/    # @windowllm/adapters - Provider adapters
+├── page-tools/  # @windowllm/page-tools - Local CSS-selector DOM tools
 ├── client/      # @windowllm/client - llm.js library
 ├── vault/       # @windowllm/vault - Vault application
 └── extension/   # @windowllm/extension - Browser extension
@@ -361,6 +370,9 @@ WindowLLM's security is built on **defense in depth** using standard web platfor
 | **XSS key exfiltration** | Even with XSS on client sites, attackers cannot access vault's localStorage—browser-enforced origin isolation. |
 | **Man-in-the-middle** | HTTPS required for all origins; postMessage validates `event.origin`. |
 | **Unauthorized API usage** | Per-origin capability-based permissions; explicit user consent required. |
+| **Unbounded page agents** | Page access is requested per session, scoped by CSS, limited to 8 model turns by default, and every local operation is returned in an execution trace. |
+| **Sensitive DOM values** | Password, hidden, one-time-code, and payment-control values remain redacted for the lifetime of their element reference; attribute writes are limited to `data-*`, `aria-*`, and `title`. |
+| **Page prompt injection** | Page content is treated as untrusted tool output; consequential applications should require user confirmation before acting. |
 | **Cost runaway** | User-configurable rate limits (requests/minute, tokens/day) enforced server-side. |
 | **Replay attacks** | Message IDs correlate requests/responses; timeouts prevent stale message acceptance. |
 | **Malicious iframe injection** | Vault validates `event.origin` on every message; never trusts payload-claimed origins. |

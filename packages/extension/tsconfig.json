@@ -8,6 +8,7 @@
   "references": [
     { "path": "../types" },
     { "path": "../protocol" },
-    { "path": "../adapters" }
+    { "path": "../adapters" },
+    { "path": "../page-tools" }
   ]
 }
