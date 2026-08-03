@@ -12,7 +12,8 @@ interface ContractResult {
   }>;
 }
 
-test('real extension satisfies the shared API and extension runtime contracts', async ({ page }) => {
+test('real extension satisfies the shared API and extension runtime contracts', async ({ context }) => {
+  const page = await context.newPage();
   await page.goto('http://127.0.0.1:3199/?runner=chromium');
   await page.waitForFunction(() => Boolean((window as any).__windowllmExtensionE2E?.done));
 
