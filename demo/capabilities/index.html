@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WindowLLM - Model Discovery</title>
+  <link rel="stylesheet" href="../demo.css">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%23F5A623' rx='15' width='100' height='100'/><text x='50%' y='50%' dominant-baseline='central' text-anchor='middle' font-size='60' font-family='system-ui,sans-serif' font-weight='800' fill='%23171717'>W</text></svg>">
+</head>
+<body>
+  <header class="wld-nav">
+    <a class="wld-brand" href="/"><span class="wld-mark">W</span> WindowLLM</a>
+    <nav class="wld-nav-links">
+      <a href="/demo/">All demos</a>
+      <a href="/">Home</a>
+    </nav>
+  </header>
+  <div class="demo-head">
+    <span class="demo-kicker">Discovery · models &amp; capabilities</span>
+    <h1>See what the user brought</h1>
+    <p class="lead">Every provider, model, and capability configured in the vault, read live through <code>window.llm.models</code>.</p>
+    <div class="demo-api"><span>models.list()</span><span>capabilities.has()</span></div>
+  </div>
+
+  <div class="status" id="status">Checking WindowLLM availability...</div>
+
+  <div class="toolbar">
+    <input type="text" class="search-input" id="search" placeholder="Search models..." disabled>
+    <button class="refresh-btn" id="refresh" disabled>Refresh</button>
+  </div>
+
+  <div class="summary" id="summary" style="display: none;">
+    <div class="summary-card">
+      <div class="summary-value" id="provider-count">0</div>
+      <div class="summary-label">Providers</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-value" id="model-count">0</div>
+      <div class="summary-label">Models</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-value" id="vision-count">0</div>
+      <div class="summary-label">Vision Models</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-value" id="tools-count">0</div>
+      <div class="summary-label">Tool-Capable</div>
+    </div>
+  </div>
+
+  <div id="output"></div>
+
+  <script>
+    (function() {
+      const isLocal = location.hostname === 'localhost' || location.hostname.endsWith('.localhost');
+      const vaultUrl = isLocal ? 'https://windowllm.localhost:3000' : 'https://windowllm.org';
+      window.WINDOWLLM_VAULT_URL = `${vaultUrl}/frame.html`;
+
+      const script = document.createElement('script');
+      script.src = `${vaultUrl}/llm.js`;
+      script.onload = main;
+      script.onerror = () => {
+        document.getElementById('status').innerHTML =
+          '<span class="error">Failed to load WindowLLM library</span>';
+      };
+      document.head.appendChild(script);
+    })();
+
+    const CAPABILITY_INFO = {
+      chat: { icon: '💬', label: 'Chat' },
+      streaming: { icon: '⚡', label: 'Streaming' },
+      vision: { icon: '👁️', label: 'Vision' },
+      tools: { icon: '🔧', label: 'Tools' },
+      embeddings: { icon: '📊', label: 'Embeddings' },
+      jsonMode: { icon: '{}', label: 'JSON Mode' },
+      systemPrompt: { icon: '📝', label: 'System Prompt' },
+      multiTurn: { icon: '🔄', label: 'Multi-turn' },
+      audioInput: { icon: '🎤', label: 'Audio In' },
+      audioOutput: { icon: '🔊', label: 'Audio Out' },
+    };
+
+    const PROVIDER_ICONS = {
+      anthropic: 'A',
+      openai: 'O',
+      openrouter: 'OR',
+      ollama: '🦙',
+      custom: '⚙️',
+    };
+
+    function formatNumber(num) {
+      if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+      if (num >= 1000) return (num / 1000).toFixed(0) + 'K';
+      return num.toString();
+    }
+
+    function getProviderFromId(modelId) {
+      const parts = modelId.split('/');
+      return parts.length > 1 ? parts[0] : 'unknown';
+    }
+
+    function renderCapabilities(capabilities) {
+      const caps = Object.entries(CAPABILITY_INFO);
+      return caps.map(([key, info]) => {
+        const enabled = capabilities[key];
+        return `<span class="cap-badge ${enabled ? 'enabled' : 'disabled'}">${info.icon} ${info.label}</span>`;
+      }).join('');
+    }
+
+    function renderLimits(limits) {
+      const items = [];
+      if (limits.contextWindow) {
+        items.push(`<span class="limit-item">Context: <span class="limit-value">${formatNumber(limits.contextWindow)}</span></span>`);
+      }
+      if (limits.maxOutputTokens) {
+        items.push(`<span class="limit-item">Max Output: <span class="limit-value">${formatNumber(limits.maxOutputTokens)}</span></span>`);
+      }
+      if (limits.maxImageCount) {
+        items.push(`<span class="limit-item">Images: <span class="limit-value">${limits.maxImageCount}</span></span>`);
+      }
+      if (limits.embeddingDimensions) {
+        items.push(`<span class="limit-item">Dimensions: <span class="limit-value">${limits.embeddingDimensions}</span></span>`);
+      }
+      return items.join('');
+    }
+
+    let allModels = [];
+
+    function renderModels(models, isFiltered = false) {
+      const output = document.getElementById('output');
+      const summary = document.getElementById('summary');
+
+      if (allModels.length === 0) {
+        output.innerHTML = '<div class="empty-state">No models available. Configure providers at windowllm.org</div>';
+        summary.style.display = 'none';
+        return;
+      }
+
+      if (models.length === 0 && isFiltered) {
+        output.innerHTML = '<div class="empty-state">No models match your search</div>';
+        return;
+      }
+
+      // Group by provider
+      const byProvider = {};
+      for (const model of models) {
+        const provider = model.provider || getProviderFromId(model.id);
+        if (!byProvider[provider]) {
+          byProvider[provider] = [];
+        }
+        byProvider[provider].push(model);
+      }
+
+      // Update summary (always show totals, not filtered counts)
+      const visionCount = allModels.filter(m => m.capabilities?.vision).length;
+      const toolsCount = allModels.filter(m => m.capabilities?.tools).length;
+
+      document.getElementById('provider-count').textContent = Object.keys(byProvider).length;
+      document.getElementById('model-count').textContent = isFiltered
+        ? `${models.length}/${allModels.length}`
+        : allModels.length;
+      document.getElementById('vision-count').textContent = visionCount;
+      document.getElementById('tools-count').textContent = toolsCount;
+      summary.style.display = 'grid';
+
+      // Render providers and models
+      let html = '';
+      for (const [provider, providerModels] of Object.entries(byProvider)) {
+        const icon = PROVIDER_ICONS[provider] || provider.charAt(0).toUpperCase();
+
+        html += `
+          <div class="provider-section">
+            <div class="provider-header">
+              <div class="provider-icon">${icon}</div>
+              <span class="provider-name">${provider.charAt(0).toUpperCase() + provider.slice(1)}</span>
+              <span class="provider-count">${providerModels.length} model${providerModels.length !== 1 ? 's' : ''}</span>
+            </div>
+            <div class="models-list">
+        `;
+
+        for (const model of providerModels) {
+          html += `
+            <div class="model-item">
+              <div class="model-header">
+                <span class="model-name">${model.name}</span>
+                <span class="model-id">${model.id}</span>
+              </div>
+              <div class="capabilities">
+                ${renderCapabilities(model.capabilities || {})}
+              </div>
+              <div class="limits">
+                ${renderLimits(model.limits || {})}
+              </div>
+            </div>
+          `;
+        }
+
+        html += '</div></div>';
+      }
+
+      output.innerHTML = html;
+    }
+
+    function filterModels(query) {
+      if (!query.trim()) {
+        renderModels(allModels, false);
+        return;
+      }
+
+      const lowerQuery = query.toLowerCase();
+      const filtered = allModels.filter(model =>
+        model.name.toLowerCase().includes(lowerQuery) ||
+        model.id.toLowerCase().includes(lowerQuery)
+      );
+      renderModels(filtered, true);
+    }
+
+    async function loadModels() {
+      const status = document.getElementById('status');
+      const refreshBtn = document.getElementById('refresh');
+      const searchInput = document.getElementById('search');
+
+      refreshBtn.disabled = true;
+      searchInput.disabled = true;
+      status.innerHTML = '<span class="wld-spinner"></span> Discovering models across your providers…';
+      document.getElementById('output').innerHTML = '<div class="empty-state"><span class="wld-spinner"></span><br>Fetching the live model list…</div>';
+
+      try {
+        allModels = await window.llm.models.list();
+        const isFallback = allModels.some(m => m.fallback);
+        status.innerHTML = `<span class="success">Loaded ${allModels.length} models</span>` +
+          (isFallback
+            ? ` <span style="color:#e0a341">— showing a built-in fallback list; the provider's live model list was unreachable</span>`
+            : '');
+        searchInput.disabled = false;
+        filterModels(searchInput.value);
+      } catch (error) {
+        status.innerHTML = `<span class="error">Failed to load models: ${error.message}</span>`;
+      } finally {
+        refreshBtn.disabled = false;
+      }
+    }
+
+    async function main() {
+      const status = document.getElementById('status');
+      const refreshBtn = document.getElementById('refresh');
+      const searchInput = document.getElementById('search');
+
+      if (!window.llm) {
+        status.innerHTML = '<span class="error">WindowLLM not available</span>';
+        return;
+      }
+
+      try {
+        await window.llm.waitForReady();
+      } catch (error) {
+        status.innerHTML = '<span class="error">WindowLLM not configured. Please visit windowllm.org to set up.</span>';
+        return;
+      }
+
+      status.textContent = `WindowLLM v${window.llm.version} (${window.llm.provider}) - Ready`;
+      refreshBtn.disabled = false;
+      refreshBtn.addEventListener('click', loadModels);
+      searchInput.addEventListener('input', (e) => filterModels(e.target.value));
+
+      // Auto-load on start
+      await loadModels();
+    }
+  </script>
+</body>
+</html>

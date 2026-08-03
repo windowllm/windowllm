@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WindowLLM - Tool Calling Example</title>
+  <link rel="stylesheet" href="../demo.css">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%23F5A623' rx='15' width='100' height='100'/><text x='50%' y='50%' dominant-baseline='central' text-anchor='middle' font-size='60' font-family='system-ui,sans-serif' font-weight='800' fill='%23171717'>W</text></svg>">
+</head>
+<body>
+  <header class="wld-nav">
+    <a class="wld-brand" href="/"><span class="wld-mark">W</span> WindowLLM</a>
+    <nav class="wld-nav-links">
+      <a href="/demo/">All demos</a>
+      <a href="/">Home</a>
+    </nav>
+  </header>
+  <div class="demo-head">
+    <span class="demo-kicker">Tools · function calling</span>
+    <h1>Let the model call your code</h1>
+    <p class="lead">Hand the model weather, calculator, and clock tools, then watch it choose one and call it.</p>
+    <div class="demo-api"><span>tools[]</span><span>finishReason: "tool_use"</span></div>
+  </div>
+
+  <div class="status" id="status">Checking WindowLLM availability...</div>
+
+  <div class="model-selector">
+    <input type="text" class="model-search" id="model-search" placeholder="Search and select model..." disabled>
+    <div class="model-dropdown" id="model-dropdown"></div>
+  </div>
+
+  <div class="tools-info">
+    <h3>Available Tools</h3>
+    <div class="tool-item">🌤️ <strong>get_weather</strong> - Get current weather for a location</div>
+    <div class="tool-item">🔢 <strong>calculate</strong> - Perform mathematical calculations</div>
+    <div class="tool-item">📅 <strong>get_current_time</strong> - Get current date and time</div>
+  </div>
+
+  <div class="input-group">
+    <input type="text" id="prompt" placeholder="Try: What's the weather in Tokyo? or What's 15% of 847?" disabled>
+    <button id="send" disabled>Send</button>
+  </div>
+
+  <div id="output"></div>
+
+  <script>
+    (function() {
+      const isLocal = location.hostname === 'localhost' || location.hostname.endsWith('.localhost');
+      const vaultUrl = isLocal ? 'https://windowllm.localhost:3000' : 'https://windowllm.org';
+
+      // Set the vault frame URL for the client library
+      window.WINDOWLLM_VAULT_URL = `${vaultUrl}/frame.html`;
+
+      const script = document.createElement('script');
+      script.src = `${vaultUrl}/llm.js`;
+      script.onload = main;
+      script.onerror = () => {
+        document.getElementById('status').innerHTML =
+          '<span class="error">Failed to load WindowLLM library</span>';
+      };
+      document.head.appendChild(script);
+    })();
+
+    async function main() {
+      const promptInput = document.getElementById('prompt');
+      const sendButton = document.getElementById('send');
+      const output = document.getElementById('output');
+      const status = document.getElementById('status');
+      const modelSearch = document.getElementById('model-search');
+      const modelDropdown = document.getElementById('model-dropdown');
+
+      let session = null;
+      let allModels = [];
+      let selectedModel = null;
+
+      // Define our tools
+    const tools = [
+      {
+        name: 'get_weather',
+        description: 'Get the current weather for a location',
+        parameters: {
+          type: 'object',
+          properties: {
+            location: {
+              type: 'string',
+              description: 'The city and country, e.g. "Tokyo, Japan"'
+            },
+            unit: {
+              type: 'string',
+              enum: ['celsius', 'fahrenheit'],
+              description: 'Temperature unit'
+            }
+          },
+          required: ['location']
+        }
+      },
+      {
+        name: 'calculate',
+        description: 'Perform a mathematical calculation',
+        parameters: {
+          type: 'object',
+          properties: {
+            expression: {
+              type: 'string',
+              description: 'Mathematical expression to evaluate, e.g. "15 * 847 / 100"'
+            }
+          },
+          required: ['expression']
+        }
+      },
+      {
+        name: 'get_current_time',
+        description: 'Get the current date and time',
+        parameters: {
+          type: 'object',
+          properties: {
+            timezone: {
+              type: 'string',
+              description: 'Timezone name, e.g. "America/New_York"'
+            }
+          }
+        }
+      }
+    ];
+
+    // Simulated tool implementations
+    function executeGetWeather(args) {
+      const conditions = ['sunny', 'cloudy', 'partly cloudy', 'rainy'];
+      const condition = conditions[Math.floor(Math.random() * conditions.length)];
+      const tempC = Math.floor(Math.random() * 30) + 5;
+      const tempF = Math.round(tempC * 9/5 + 32);
+      const temp = args.unit === 'fahrenheit' ? `${tempF}°F` : `${tempC}°C`;
+
+      return {
+        location: args.location,
+        temperature: temp,
+        condition: condition,
+        humidity: `${Math.floor(Math.random() * 50) + 30}%`
+      };
+    }
+
+    function executeCalculate(args) {
+      try {
+        // Safe math evaluation (in real apps, use a proper math parser)
+        const sanitized = args.expression.replace(/[^0-9+\-*/.()% ]/g, '');
+        const result = Function(`"use strict"; return (${sanitized})`)();
+        return { expression: args.expression, result: result };
+      } catch (e) {
+        return { error: 'Invalid expression' };
+      }
+    }
+
+    function executeGetCurrentTime(args) {
+      const options = {
+        timeZone: args.timezone || 'UTC',
+        dateStyle: 'full',
+        timeStyle: 'long'
+      };
+      try {
+        return {
+          datetime: new Date().toLocaleString('en-US', options),
+          timezone: args.timezone || 'UTC'
+        };
+      } catch (e) {
+        return {
+          datetime: new Date().toISOString(),
+          timezone: 'UTC',
+          note: 'Invalid timezone, using UTC'
+        };
+      }
+    }
+
+    function executeTool(name, args) {
+      switch (name) {
+        case 'get_weather': return executeGetWeather(args);
+        case 'calculate': return executeCalculate(args);
+        case 'get_current_time': return executeGetCurrentTime(args);
+        default: return { error: `Unknown tool: ${name}` };
+      }
+    }
+
+    function addMessage(role, content, extra = {}) {
+      const div = document.createElement('div');
+      div.className = `message ${role}`;
+
+      let label = role.charAt(0).toUpperCase() + role.slice(1);
+      if (extra.toolName) label = `Tool: ${extra.toolName}`;
+      if (extra.isResult) label = 'Tool Result';
+
+      div.innerHTML = `<div class="label">${label}</div><pre>${
+        typeof content === 'string' ? content : JSON.stringify(content, null, 2)
+      }</pre>`;
+
+      output.appendChild(div);
+      output.scrollTop = output.scrollHeight;
+    }
+
+    function renderModelDropdown(filter = '') {
+      const lowerFilter = filter.toLowerCase();
+      const filtered = filter
+        ? allModels.filter(m => m.name.toLowerCase().includes(lowerFilter) || m.id.toLowerCase().includes(lowerFilter))
+        : allModels;
+
+      modelDropdown.innerHTML = filtered.slice(0, 50).map(m => `
+        <div class="model-option ${selectedModel?.id === m.id ? 'selected' : ''}" data-id="${m.id}">
+          ${m.name}
+          <small>${m.id}</small>
+        </div>
+      `).join('');
+
+      modelDropdown.querySelectorAll('.model-option').forEach(el => {
+        el.addEventListener('click', () => selectModel(el.dataset.id));
+      });
+    }
+
+    async function selectModel(modelId) {
+      const model = allModels.find(m => m.id === modelId);
+      if (!model) return;
+
+      selectedModel = model;
+      modelSearch.value = model.name;
+      modelDropdown.classList.remove('open');
+
+      try {
+        session = await window.llm.requestSession({
+          model: model.id,
+          capabilities: { required: ['tools'] },
+          tools: tools,
+          systemPrompt: 'You are a helpful assistant with access to tools. Use them when appropriate to answer user questions accurately.'
+        });
+        status.textContent = `Using ${session.model.name} with tools`;
+        promptInput.disabled = false;
+        sendButton.disabled = false;
+        output.innerHTML = '';
+      } catch (error) {
+        status.innerHTML = `<span class="error">Failed: ${error.message}</span>`;
+      }
+    }
+
+    async function init() {
+      if (!window.llm) {
+        status.innerHTML = '<span class="error">WindowLLM not available</span>';
+        return;
+      }
+
+      try {
+        await window.llm.waitForReady();
+      } catch (error) {
+        status.innerHTML = '<span class="error">WindowLLM not configured</span>';
+        return;
+      }
+
+      status.textContent = 'Loading models...';
+
+      try {
+        allModels = await window.llm.models.list();
+        // Filter to tool-capable models
+        allModels = allModels.filter(m => m.capabilities?.tools !== false);
+        modelSearch.disabled = false;
+        modelSearch.placeholder = `Search ${allModels.length} tool-capable models...`;
+        renderModelDropdown();
+
+        if (allModels.length > 0) {
+          await selectModel(allModels[0].id);
+        }
+      } catch (error) {
+        status.innerHTML = `<span class="error">Failed to load models: ${error.message}</span>`;
+      }
+    }
+
+    async function sendMessage() {
+      const prompt = promptInput.value.trim();
+      if (!prompt || !session) return;
+
+      sendButton.disabled = true;
+      promptInput.value = '';
+      addMessage('user', prompt);
+
+      try {
+        let result = await session.complete(prompt);
+
+        // Handle tool calls in a loop
+        while (result.finishReason === 'tool_use' && result.toolCalls?.length > 0) {
+          const toolResults = [];
+
+          for (const toolCall of result.toolCalls) {
+            // Show the tool call
+            addMessage('tool-call', {
+              tool: toolCall.name,
+              arguments: toolCall.arguments
+            }, { toolName: toolCall.name });
+
+            // Execute the tool
+            const toolResult = executeTool(toolCall.name, toolCall.arguments);
+
+            // Show the result
+            addMessage('tool-result', toolResult, { isResult: true });
+
+            toolResults.push({
+              toolCallId: toolCall.id,
+              result: toolResult
+            });
+          }
+
+          // Send tool results back to the model
+          result = await session.complete(toolResults.map(tr => ({
+            role: 'tool',
+            toolCallId: tr.toolCallId,
+            content: JSON.stringify(tr.result)
+          })));
+        }
+
+        // Show final response
+        if (result.message?.content) {
+          addMessage('assistant', result.message.content);
+        }
+
+        status.textContent = `Tokens: ${result.usage.inputTokens} in, ${result.usage.outputTokens} out`;
+
+      } catch (error) {
+        addMessage('error', `Error: ${error.message}`);
+      } finally {
+        sendButton.disabled = false;
+        promptInput.focus();
+      }
+    }
+
+      // Model selector events
+      modelSearch.addEventListener('focus', () => {
+        renderModelDropdown(modelSearch.value);
+        modelDropdown.classList.add('open');
+      });
+      modelSearch.addEventListener('input', (e) => {
+        renderModelDropdown(e.target.value);
+        modelDropdown.classList.add('open');
+      });
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('.model-selector')) {
+          modelDropdown.classList.remove('open');
+        }
+      });
+
+      sendButton.addEventListener('click', sendMessage);
+      promptInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') sendMessage();
+      });
+
+      init();
+    }
+  </script>
+</body>
+</html>

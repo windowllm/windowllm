@@ -1,0 +1,41 @@
+# WindowLLM
+
+> WindowLLM is a universal browser API for Large Language Models. Websites use `window.llm` to request AI capabilities while users retain control of their providers, models, API keys, and per-site permissions.
+
+Use the developer guide for implementation examples and the specification for the exact API contract. The specification is normative; when the two differ, follow the specification.
+
+Important integration notes:
+
+- Load `https://windowllm.org/llm.js`, then feature-detect `window.llm` before using it.
+- Request capabilities rather than a specific provider. Start a chat session with `window.llm.requestSession()` and call `complete()` or `stream()` on the returned session. Sessions with a `page` access request can call `run()` to execute a bounded local CSS-selector tool loop.
+- API keys remain in the user's vault and are never exposed to the calling website.
+- The iframe implementation works without an install in supported browsers. Safari and local models generally require the WindowLLM browser extension.
+- WindowLLM is an unofficial web-platform proposal with a working reference implementation, not a W3C Standard.
+
+## Documentation
+
+- [Developer guide](https://windowllm.org/docs/): Example-driven introduction covering setup, sessions, streaming, tool calling, local page tools, structured output, embeddings, permissions, model discovery, and errors.
+- [Specification](https://windowllm.org/spec/): Normative API reference, including WebIDL, algorithms, security requirements, privacy considerations, and conformance rules.
+- [API entry point](https://windowllm.org/spec/#infrastructure): Exact contract for `window.llm`, feature detection, capabilities, permissions, model discovery, sessions, and embeddings.
+- [Security considerations](https://windowllm.org/spec/#security): Threat model, key isolation, origin validation, rate limiting, transport, storage, and client-library integrity.
+
+## Examples
+
+- [Demo index](https://windowllm.org/demo/): Live examples for the WindowLLM browser API.
+- [Basic completion](https://windowllm.org/demo/basic/): Minimal session request and one-shot completion.
+- [Streaming](https://windowllm.org/demo/streaming/): Consume completion chunks with an async iterator.
+- [Tool calling](https://windowllm.org/demo/tools/): Define tools and handle model tool calls.
+- [Local page tools](https://windowllm.org/demo/page-tools/): Run scoped `querySelector()` and controlled page mutations while inspecting the complete local execution trace.
+- [Model capabilities](https://windowllm.org/demo/capabilities/): Discover models and match required or preferred capabilities.
+
+## Source
+
+- [GitHub repository](https://github.com/windowllm/windowllm): Reference implementation, TypeScript types, provider adapters, browser extension, tests, and contribution history.
+- [Public TypeScript API](https://github.com/windowllm/windowllm/tree/main/packages/types/src): Source definitions for the public API, capabilities, messages, and errors.
+- [Client library](https://github.com/windowllm/windowllm/tree/main/packages/client): Source for the browser client published as `https://windowllm.org/llm.js`.
+
+## Optional
+
+- [WindowLLM home and vault](https://windowllm.org/): Product overview and the user-facing provider, key, and permission configuration hub.
+- [Chat demo](https://windowllm.org/demo/chat/): Complete conversational interface example.
+- [Local-model demo](https://windowllm.org/demo/local-models/): Example using local models through the browser extension.

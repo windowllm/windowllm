@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WindowLLM - Basic Example</title>
+  <link rel="stylesheet" href="../demo.css">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%23F5A623' rx='15' width='100' height='100'/><text x='50%' y='50%' dominant-baseline='central' text-anchor='middle' font-size='60' font-family='system-ui,sans-serif' font-weight='800' fill='%23171717'>W</text></svg>">
+</head>
+<body>
+  <header class="wld-nav">
+    <a class="wld-brand" href="/"><span class="wld-mark">W</span> WindowLLM</a>
+    <nav class="wld-nav-links">
+      <a href="/demo/">All demos</a>
+      <a href="/">Home</a>
+    </nav>
+  </header>
+  <div class="demo-head">
+    <span class="demo-kicker">Basic · one-shot completion</span>
+    <h1>Ask once, get an answer</h1>
+    <p class="lead">One <code>complete()</code> call against a model you choose. The simplest thing <code>window.llm</code> can do.</p>
+    <div class="demo-api"><span>requestSession()</span><span>session.complete()</span></div>
+  </div>
+
+  <div class="status" id="status">Checking WindowLLM availability...</div>
+
+  <div class="model-selector">
+    <input type="text" class="model-search" id="model-search" placeholder="Search and select model..." disabled>
+    <div class="model-dropdown" id="model-dropdown"></div>
+  </div>
+
+  <div class="input-group">
+    <input type="text" id="prompt" placeholder="Ask anything..." disabled>
+    <button id="send" disabled>Send</button>
+  </div>
+
+  <div id="output">Response will appear here...</div>
+
+  <script>
+    (function() {
+      // Detect local development and use local vault
+      const isLocal = location.hostname === 'localhost' || location.hostname.endsWith('.localhost');
+      const vaultUrl = isLocal ? 'https://windowllm.localhost:3000' : 'https://windowllm.org';
+
+      // Set the vault frame URL for the client library
+      window.WINDOWLLM_VAULT_URL = `${vaultUrl}/frame.html`;
+
+      const script = document.createElement('script');
+      script.src = `${vaultUrl}/llm.js`;
+      script.onload = main;
+      script.onerror = () => {
+        document.getElementById('status').innerHTML =
+          '<span class="error">Failed to load WindowLLM library from ' + vaultUrl + '</span>';
+      };
+      document.head.appendChild(script);
+    })();
+
+    async function main() {
+      const promptInput = document.getElementById('prompt');
+      const sendButton = document.getElementById('send');
+      const output = document.getElementById('output');
+      const status = document.getElementById('status');
+      const modelSearch = document.getElementById('model-search');
+      const modelDropdown = document.getElementById('model-dropdown');
+
+      let session = null;
+      let allModels = [];
+      let selectedModel = null;
+
+      function renderModelDropdown(filter = '') {
+        const lowerFilter = filter.toLowerCase();
+        const filtered = filter
+          ? allModels.filter(m => m.name.toLowerCase().includes(lowerFilter) || m.id.toLowerCase().includes(lowerFilter))
+          : allModels;
+
+        modelDropdown.innerHTML = filtered.slice(0, 50).map(m => `
+          <div class="model-option ${selectedModel?.id === m.id ? 'selected' : ''}" data-id="${m.id}">
+            ${m.name}
+            <small>${m.id}</small>
+          </div>
+        `).join('');
+
+        modelDropdown.querySelectorAll('.model-option').forEach(el => {
+          el.addEventListener('click', () => selectModel(el.dataset.id));
+        });
+      }
+
+      async function selectModel(modelId) {
+        const model = allModels.find(m => m.id === modelId);
+        if (!model) return;
+
+        selectedModel = model;
+        modelSearch.value = model.name;
+        modelDropdown.classList.remove('open');
+
+        // Create new session with selected model
+        try {
+          session = await window.llm.requestSession({ model: model.id });
+          status.textContent = `Using ${session.model.name}`;
+          promptInput.disabled = false;
+          sendButton.disabled = false;
+        } catch (error) {
+          status.innerHTML = `<span class="error">Failed: ${error.message}</span>`;
+        }
+      }
+
+      async function init() {
+        if (!window.llm) {
+          status.innerHTML = '<span class="error">WindowLLM not available</span>';
+          return;
+        }
+
+        try {
+          await window.llm.waitForReady();
+        } catch (error) {
+          status.innerHTML = '<span class="error">WindowLLM not configured</span>';
+          return;
+        }
+
+        status.textContent = 'Loading models...';
+
+        try {
+          allModels = await window.llm.models.list();
+          // Filter to chat-capable models
+          allModels = allModels.filter(m => m.capabilities?.chat !== false);
+          modelSearch.disabled = false;
+          modelSearch.placeholder = `Search ${allModels.length} models...`;
+          renderModelDropdown();
+
+          // Auto-select first model
+          if (allModels.length > 0) {
+            await selectModel(allModels[0].id);
+          }
+        } catch (error) {
+          status.innerHTML = `<span class="error">Failed to load models: ${error.message}</span>`;
+        }
+      }
+
+      async function sendMessage() {
+        const prompt = promptInput.value.trim();
+        if (!prompt || !session) return;
+
+        sendButton.disabled = true;
+        output.textContent = 'Thinking...';
+
+        try {
+          const result = await session.complete(prompt);
+          output.textContent = result.message.content;
+          status.textContent = `${selectedModel?.name} - ${result.usage.inputTokens} in, ${result.usage.outputTokens} out`;
+        } catch (error) {
+          output.innerHTML = `<span class="error">Error: ${error.message}</span>`;
+        } finally {
+          sendButton.disabled = false;
+          promptInput.value = '';
+          promptInput.focus();
+        }
+      }
+
+      // Model selector events
+      modelSearch.addEventListener('focus', () => {
+        renderModelDropdown(modelSearch.value);
+        modelDropdown.classList.add('open');
+      });
+      modelSearch.addEventListener('input', (e) => {
+        renderModelDropdown(e.target.value);
+        modelDropdown.classList.add('open');
+      });
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('.model-selector')) {
+          modelDropdown.classList.remove('open');
+        }
+      });
+
+      sendButton.addEventListener('click', sendMessage);
+      promptInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') sendMessage();
+      });
+
+      init();
+    }
+  </script>
+</body>
+</html>
