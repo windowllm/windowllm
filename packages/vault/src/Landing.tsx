@@ -6,6 +6,14 @@
  * vault setup/unlock card (passed as `children`) in the #setup section.
  */
 
+import {
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
+
 import { ProviderLogo } from './ProviderLogo';
 
 const PROVIDERS = [
@@ -17,6 +25,243 @@ const PROVIDERS = [
 ];
 
 const GITHUB = 'https://github.com/windowllm/windowllm';
+
+interface Point {
+  readonly x: number;
+  readonly y: number;
+}
+
+interface WindowSize {
+  readonly width: number;
+  readonly height: number;
+}
+
+interface PointerGesture {
+  readonly pointerId: number;
+  readonly start: Point;
+  readonly origin: Point;
+}
+
+const HOME_POSITION: Point = { x: 0, y: 0 };
+const RESIZE_STEP = 12;
+
+function HeroWindow() {
+  const windowRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<PointerGesture | null>(null);
+  const resizeRef = useRef<PointerGesture & { readonly size: WindowSize } | null>(null);
+  const [isAlive, setIsAlive] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [position, setPosition] = useState<Point>(HOME_POSITION);
+  const [size, setSize] = useState<WindowSize | null>(null);
+  const [announcement, setAnnouncement] = useState('');
+
+  const wake = () => {
+    if (!isAlive) setAnnouncement('Demo window awake. Drag the toolbar to move it, or use the corner handle to resize it.');
+    setIsAlive(true);
+  };
+
+  const snapHome = () => {
+    dragRef.current = null;
+    resizeRef.current = null;
+    setPosition(HOME_POSITION);
+    setSize(null);
+    setIsCollapsed(false);
+    setIsAlive(false);
+    setAnnouncement('Demo window snapped home and dimmed.');
+  };
+
+  const toggleCollapsed = () => {
+    const nextCollapsed = !isCollapsed;
+    setIsAlive(true);
+    setIsCollapsed(nextCollapsed);
+    setAnnouncement(nextCollapsed ? 'Demo window collapsed.' : 'Demo window expanded.');
+  };
+
+  const constrainPosition = (next: Point, current: Point) => {
+    const rect = windowRef.current?.getBoundingClientRect();
+    if (!rect) return next;
+
+    const visibleEdge = 72;
+    const deltaX = next.x - current.x;
+    const deltaY = next.y - current.y;
+    const left = Math.min(window.innerWidth - visibleEdge, Math.max(visibleEdge - rect.width, rect.left + deltaX));
+    const top = Math.min(window.innerHeight - visibleEdge, Math.max(0, rect.top + deltaY));
+
+    return {
+      x: current.x + left - rect.left,
+      y: current.y + top - rect.top,
+    };
+  };
+
+  const moveWindow = (next: Point) => {
+    setPosition((current) => constrainPosition(next, current));
+  };
+
+  const startDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!isAlive || event.button !== 0 || (event.target as HTMLElement).closest('button')) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = {
+      pointerId: event.pointerId,
+      start: { x: event.clientX, y: event.clientY },
+      origin: position,
+    };
+  };
+
+  const dragWindow = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+
+    moveWindow({
+      x: drag.origin.x + event.clientX - drag.start.x,
+      y: drag.origin.y + event.clientY - drag.start.y,
+    });
+  };
+
+  const stopDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null;
+  };
+
+  const moveWithKeyboard = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (!isAlive) return;
+    const step = event.shiftKey ? 2 : RESIZE_STEP;
+    const movement: Record<string, Point> = {
+      ArrowLeft: { x: -step, y: 0 },
+      ArrowRight: { x: step, y: 0 },
+      ArrowUp: { x: 0, y: -step },
+      ArrowDown: { x: 0, y: step },
+    };
+    const delta = movement[event.key];
+    if (delta) {
+      event.preventDefault();
+      moveWindow({ x: position.x + delta.x, y: position.y + delta.y });
+    } else if (event.key === 'Escape') {
+      snapHome();
+    }
+  };
+
+  const startResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (event.button !== 0) return;
+    event.stopPropagation();
+    wake();
+    const rect = windowRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    resizeRef.current = {
+      pointerId: event.pointerId,
+      start: { x: event.clientX, y: event.clientY },
+      origin: HOME_POSITION,
+      size: { width: rect.width, height: rect.height },
+    };
+  };
+
+  const resizeWindow = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const resize = resizeRef.current;
+    if (!resize || resize.pointerId !== event.pointerId) return;
+    const maxWidth = Math.max(280, window.innerWidth - 32);
+    const maxHeight = Math.max(190, window.innerHeight - 32);
+    setSize({
+      width: Math.min(maxWidth, Math.max(280, resize.size.width + event.clientX - resize.start.x)),
+      height: Math.min(maxHeight, Math.max(190, resize.size.height + event.clientY - resize.start.y)),
+    });
+  };
+
+  const stopResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (resizeRef.current?.pointerId === event.pointerId) resizeRef.current = null;
+  };
+
+  const resizeWithKeyboard = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    const rect = windowRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const step = event.shiftKey ? 2 : RESIZE_STEP;
+    const deltas: Record<string, WindowSize> = {
+      ArrowLeft: { width: -step, height: 0 },
+      ArrowRight: { width: step, height: 0 },
+      ArrowUp: { width: 0, height: -step },
+      ArrowDown: { width: 0, height: step },
+    };
+    const delta = deltas[event.key];
+    if (!delta) return;
+    event.preventDefault();
+    const maxWidth = Math.max(280, window.innerWidth - 32);
+    const maxHeight = Math.max(190, window.innerHeight - 32);
+    setSize({
+      width: Math.min(maxWidth, Math.max(280, rect.width + delta.width)),
+      height: Math.min(maxHeight, Math.max(190, rect.height + delta.height)),
+    });
+  };
+
+  const style: CSSProperties = {
+    transform: `translate3d(${position.x}px, ${position.y}px, 0)`,
+    ...(size && !isCollapsed ? { width: size.width, height: size.height } : {}),
+  };
+
+  return (
+    <div className="wl-window-stage">
+      <div
+        ref={windowRef}
+        className={`wl-window wl-rise${isAlive ? ' is-alive' : ''}${isCollapsed ? ' is-collapsed' : ''}`}
+        style={{ ...style, animationDelay: '0.3s' }}
+      >
+        <div
+          className="wl-chrome"
+          tabIndex={isAlive ? 0 : -1}
+          role={isAlive ? 'group' : undefined}
+          aria-label={isAlive ? 'Movable demo window. Use arrow keys to move it, or press Escape to snap it home.' : undefined}
+          onPointerDown={startDrag}
+          onPointerMove={dragWindow}
+          onPointerUp={stopDrag}
+          onPointerCancel={stopDrag}
+          onKeyDown={moveWithKeyboard}
+        >
+          <div className="wl-dots">
+            <button type="button" className="wl-dot wl-dot-close" onClick={snapHome} aria-label="Snap window home and dim it" title="Snap home" />
+            <button
+              type="button"
+              className="wl-dot wl-dot-collapse"
+              onClick={toggleCollapsed}
+              aria-expanded={!isCollapsed}
+              aria-controls="wl-live-window-content"
+              aria-label={isCollapsed ? 'Expand demo window' : 'Collapse demo window'}
+              title={isCollapsed ? 'Expand' : 'Collapse'}
+            />
+            <button
+              type="button"
+              className="wl-dot wl-dot-wake"
+              onClick={wake}
+              aria-label={isAlive ? 'Demo window is alive' : 'Wake demo window'}
+              title={isAlive ? 'Alive' : 'Wake window'}
+            />
+          </div>
+          <div className="wl-addr">yoursite.com</div>
+        </div>
+        <div id="wl-live-window-content" className="wl-window-content" aria-hidden={isCollapsed}>
+          <div className="wl-window-content-inner">
+            <pre className="wl-code"><span className="c">// any page, no keys of its own</span>{'\n'}
+<span className="k">const</span> s = <span className="k">await</span> window.llm{'\n'}  .requestSession();{'\n'}
+<span className="k">const</span> r = <span className="k">await</span> s.complete({'\n'}  <span className="s">"Draft a friendly reply"</span>{'\n'});
+<span className="out"><span className="c">// streamed from your model</span>{'\n'}Of course. Here is a warm,<br />concise draft you can send<span className="wl-cursor" /></span></pre>
+          </div>
+        </div>
+        {isAlive && !isCollapsed && (
+          <button
+            type="button"
+            className="wl-resize-handle"
+            aria-label="Resize demo window. Use arrow keys for precise resizing."
+            title="Resize"
+            onPointerDown={startResize}
+            onPointerMove={resizeWindow}
+            onPointerUp={stopResize}
+            onPointerCancel={stopResize}
+            onKeyDown={resizeWithKeyboard}
+          />
+        )}
+        <span className="wl-sr-only" role="status" aria-live="polite">
+          {announcement}
+        </span>
+      </div>
+    </div>
+  );
+}
 
 // Hand-tokenized so the code block is syntax-highlighted (no highlighter dep).
 const DEV_SNIPPET_HTML = [
@@ -64,16 +309,7 @@ export function Landing({ onOpenVault }: { onOpenVault: () => void }) {
           </div>
         </div>
 
-        <div className="wl-window wl-rise" style={{ animationDelay: '0.3s' }} aria-hidden="true">
-          <div className="wl-chrome">
-            <div className="wl-dots"><i /><i /><i /></div>
-            <div className="wl-addr">yoursite.com</div>
-          </div>
-          <pre className="wl-code"><span className="c">// any page, no keys of its own</span>{'\n'}
-<span className="k">const</span> s = <span className="k">await</span> window.llm{'\n'}  .requestSession();{'\n'}
-<span className="k">const</span> r = <span className="k">await</span> s.complete({'\n'}  <span className="s">"Draft a friendly reply"</span>{'\n'});
-<span className="out"><span className="c">// streamed from your model</span>{'\n'}Of course. Here is a warm,<br />concise draft you can send<span className="wl-cursor" /></span></pre>
-        </div>
+        <HeroWindow />
       </header>
 
       {/* Value claims */}
