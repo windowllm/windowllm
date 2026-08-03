@@ -42,13 +42,63 @@ interface PointerGesture {
   readonly origin: Point;
 }
 
+type ResizeDirection = 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'nw';
+
+interface ResizeGesture extends PointerGesture {
+  readonly direction: ResizeDirection;
+  readonly size: WindowSize;
+}
+
 const HOME_POSITION: Point = { x: 0, y: 0 };
 const RESIZE_STEP = 12;
+const MIN_WINDOW_SIZE: WindowSize = { width: 280, height: 190 };
+const RESIZE_DIRECTIONS: readonly ResizeDirection[] = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
+
+const RESIZE_LABELS: Readonly<Record<ResizeDirection, string>> = {
+  n: 'top edge',
+  ne: 'top-right corner',
+  e: 'right edge',
+  se: 'bottom-right corner',
+  s: 'bottom edge',
+  sw: 'bottom-left corner',
+  w: 'left edge',
+  nw: 'top-left corner',
+};
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function calculateResize(
+  direction: ResizeDirection,
+  origin: Point,
+  size: WindowSize,
+  delta: Point,
+  maximum: WindowSize,
+) {
+  let width = size.width;
+  let height = size.height;
+  let x = origin.x;
+  let y = origin.y;
+
+  if (direction.includes('e')) width = clamp(size.width + delta.x, MIN_WINDOW_SIZE.width, maximum.width);
+  if (direction.includes('s')) height = clamp(size.height + delta.y, MIN_WINDOW_SIZE.height, maximum.height);
+  if (direction.includes('w')) {
+    width = clamp(size.width - delta.x, MIN_WINDOW_SIZE.width, maximum.width);
+    x = origin.x + size.width - width;
+  }
+  if (direction.includes('n')) {
+    height = clamp(size.height - delta.y, MIN_WINDOW_SIZE.height, maximum.height);
+    y = origin.y + size.height - height;
+  }
+
+  return { position: { x, y }, size: { width, height } };
+}
 
 function HeroWindow() {
   const windowRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<PointerGesture | null>(null);
-  const resizeRef = useRef<PointerGesture & { readonly size: WindowSize } | null>(null);
+  const resizeRef = useRef<ResizeGesture | null>(null);
   const [isAlive, setIsAlive] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [position, setPosition] = useState<Point>(HOME_POSITION);
@@ -56,7 +106,7 @@ function HeroWindow() {
   const [announcement, setAnnouncement] = useState('');
 
   const wake = () => {
-    if (!isAlive) setAnnouncement('Demo window awake. Drag the toolbar to move it, or use the corner handle to resize it.');
+    if (!isAlive) setAnnouncement('Demo window awake. Drag the toolbar to move it, or drag any edge or corner to resize it.');
     setIsAlive(true);
   };
 
@@ -139,17 +189,22 @@ function HeroWindow() {
     }
   };
 
-  const startResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
+  const maximumWindowSize = (): WindowSize => ({
+    width: Math.max(MIN_WINDOW_SIZE.width, window.innerWidth - 32),
+    height: Math.max(MIN_WINDOW_SIZE.height, window.innerHeight - 32),
+  });
+
+  const startResize = (event: ReactPointerEvent<HTMLButtonElement>, direction: ResizeDirection) => {
     if (event.button !== 0) return;
     event.stopPropagation();
-    wake();
     const rect = windowRef.current?.getBoundingClientRect();
     if (!rect) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     resizeRef.current = {
       pointerId: event.pointerId,
       start: { x: event.clientX, y: event.clientY },
-      origin: HOME_POSITION,
+      origin: position,
+      direction,
       size: { width: rect.width, height: rect.height },
     };
   };
@@ -157,37 +212,46 @@ function HeroWindow() {
   const resizeWindow = (event: ReactPointerEvent<HTMLButtonElement>) => {
     const resize = resizeRef.current;
     if (!resize || resize.pointerId !== event.pointerId) return;
-    const maxWidth = Math.max(280, window.innerWidth - 32);
-    const maxHeight = Math.max(190, window.innerHeight - 32);
-    setSize({
-      width: Math.min(maxWidth, Math.max(280, resize.size.width + event.clientX - resize.start.x)),
-      height: Math.min(maxHeight, Math.max(190, resize.size.height + event.clientY - resize.start.y)),
-    });
+    const result = calculateResize(
+      resize.direction,
+      resize.origin,
+      resize.size,
+      { x: event.clientX - resize.start.x, y: event.clientY - resize.start.y },
+      maximumWindowSize(),
+    );
+    setPosition(result.position);
+    setSize(result.size);
   };
 
   const stopResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
     if (resizeRef.current?.pointerId === event.pointerId) resizeRef.current = null;
   };
 
-  const resizeWithKeyboard = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+  const resizeWithKeyboard = (event: ReactKeyboardEvent<HTMLButtonElement>, direction: ResizeDirection) => {
     const rect = windowRef.current?.getBoundingClientRect();
     if (!rect) return;
     const step = event.shiftKey ? 2 : RESIZE_STEP;
-    const deltas: Record<string, WindowSize> = {
-      ArrowLeft: { width: -step, height: 0 },
-      ArrowRight: { width: step, height: 0 },
-      ArrowUp: { width: 0, height: -step },
-      ArrowDown: { width: 0, height: step },
+    const deltas: Record<string, Point> = {
+      ArrowLeft: { x: -step, y: 0 },
+      ArrowRight: { x: step, y: 0 },
+      ArrowUp: { x: 0, y: -step },
+      ArrowDown: { x: 0, y: step },
     };
     const delta = deltas[event.key];
     if (!delta) return;
+    const affectsHorizontal = direction.includes('e') || direction.includes('w');
+    const affectsVertical = direction.includes('n') || direction.includes('s');
+    if ((delta.x && !affectsHorizontal) || (delta.y && !affectsVertical)) return;
     event.preventDefault();
-    const maxWidth = Math.max(280, window.innerWidth - 32);
-    const maxHeight = Math.max(190, window.innerHeight - 32);
-    setSize({
-      width: Math.min(maxWidth, Math.max(280, rect.width + delta.width)),
-      height: Math.min(maxHeight, Math.max(190, rect.height + delta.height)),
-    });
+    const result = calculateResize(
+      direction,
+      position,
+      { width: rect.width, height: rect.height },
+      delta,
+      maximumWindowSize(),
+    );
+    setPosition(result.position);
+    setSize(result.size);
   };
 
   const style: CSSProperties = {
@@ -232,7 +296,14 @@ function HeroWindow() {
               title={isAlive ? 'Alive' : 'Wake window'}
             />
           </div>
-          <div className="wl-addr">yoursite.com</div>
+          <div className="wl-addr">
+            <svg aria-hidden="true" viewBox="0 0 16 16">
+              <rect x="3.5" y="7" width="9" height="6.5" rx="2" />
+              <path d="M5.5 7V5.25a2.5 2.5 0 0 1 5 0V7" />
+            </svg>
+            <span>yoursite.com</span>
+          </div>
+          <div className="wl-chrome-spacer" aria-hidden="true" />
         </div>
         <div id="wl-live-window-content" className="wl-window-content" aria-hidden={isCollapsed}>
           <div className="wl-window-content-inner">
@@ -242,19 +313,20 @@ function HeroWindow() {
 <span className="out"><span className="c">// streamed from your model</span>{'\n'}Of course. Here is a warm,<br />concise draft you can send<span className="wl-cursor" /></span></pre>
           </div>
         </div>
-        {isAlive && !isCollapsed && (
+        {isAlive && !isCollapsed && RESIZE_DIRECTIONS.map((direction) => (
           <button
+            key={direction}
             type="button"
-            className="wl-resize-handle"
-            aria-label="Resize demo window. Use arrow keys for precise resizing."
-            title="Resize"
-            onPointerDown={startResize}
+            className={`wl-resize-handle wl-resize-${direction}`}
+            aria-label={`Resize demo window from the ${RESIZE_LABELS[direction]}. Use arrow keys for precise resizing.`}
+            title={`Resize from ${RESIZE_LABELS[direction]}`}
+            onPointerDown={(event) => startResize(event, direction)}
             onPointerMove={resizeWindow}
             onPointerUp={stopResize}
             onPointerCancel={stopResize}
-            onKeyDown={resizeWithKeyboard}
+            onKeyDown={(event) => resizeWithKeyboard(event, direction)}
           />
-        )}
+        ))}
         <span className="wl-sr-only" role="status" aria-live="polite">
           {announcement}
         </span>
