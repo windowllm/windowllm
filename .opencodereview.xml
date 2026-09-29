@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<review>
+  <version>0.1</version>
+  <subject>
+    <type>patch</type>
+    <provider>git-uncommitted</provider>
+    <repo>/Users/yrashk/Projects/windowllm</repo>
+  </subject>
+  <activities>
+    <activity>
+      <id>0f867f49-6654-4fa3-b391-a2a0838ec40d</id>
+      <author>
+        <name>Yurii Rashkovskii</name>
+        <email>yrashk@gmail.com</email>
+      </author>
+      <category>note</category>
+      <content>Test</content>
+      <location>
+        <file>.gitignore</file>
+        <lines>
+          <range>
+            <start>33</start>
+            <end>33</end>
+          </range>
+        </lines>
+      </location>
+    </activity>
+  </activities>
+  <agent_context>
+    <instructions><![CDATA[OPENCODEREVIEW SESSION (XML FORMAT)
+====================================
+
+This file contains a code review in OpenCodeReview format.
+The TUI (acre) will hot-reload when you save changes to this file.
+
+HOW TO PARTICIPATE
+------------------
+
+1. FIND comments that need a response (no reply from you yet)
+2. RESPOND by adding a reply inside the parent's <replies> element
+3. Only ADD new comments if explicitly requested
+
+ADDING A NEW COMMENT
+--------------------
+
+Append inside <activities>:
+
+  <activity>
+    <category>suggestion</category>
+    <content>Your comment text here</content>
+    <author><type>agent</type><name>Claude</name><model>opus</model></author>
+    <location>
+      <file>src/main.py</file>
+      <lines><range><start>42</start><end>42</end></range></lines>
+    </location>
+  </activity>
+
+REPLYING TO A COMMENT
+---------------------
+
+Find the comment and add inside its <replies>:
+
+  <activity>
+    <category>note</category>
+    <content>Your reply text here</content>
+    <author><type>agent</type><name>Claude</name><model>opus</model></author>
+  </activity>
+
+CATEGORIES: note, suggestion, issue, praise, question, task, security
+
+IMPORTANT
+---------
+- Keep the XML valid - the TUI will fail to reload if syntax is broken
+- Line numbers refer to the NEW file (after changes)
+- Author: Always use type=agent with your name and model]]></instructions>
+  </agent_context>
+</review>
