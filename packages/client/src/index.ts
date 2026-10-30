@@ -936,6 +936,22 @@ class ClientSession implements LLMSession {
       }
     );
 
+    // A request that fails before its done chunk must end iteration rather
+    // than leave it waiting for chunks that will never arrive.
+    let failure: Error | null = null;
+    responsePromise.then(response => {
+      if (!response.payload.success) {
+        failure = new Error(response.payload.error?.message || 'Completion failed');
+      }
+    }, (error: unknown) => {
+      failure = error instanceof Error ? error : new Error(String(error));
+    }).finally(() => {
+      if (resolveNext) {
+        resolveNext(false);
+        resolveNext = null;
+      }
+    });
+
     // Yield chunks as they arrive
     let chunkIndex = 0;
     while (true) {
@@ -977,6 +993,8 @@ class ClientSession implements LLMSession {
 
         // Give browser a chance to repaint between chunks
         await new Promise((resolve) => setTimeout(resolve, 0));
+      } else if (failure) {
+        throw failure;
       } else {
         // Wait for next chunk
         await new Promise<boolean>((resolve) => {

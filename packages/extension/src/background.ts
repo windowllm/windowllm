@@ -643,6 +643,19 @@ async function handleSessionInit(
   return { model, tools: [...siteTools, ...pageTools] };
 }
 
+/** Parse streamed tool-call arguments, rejecting anything but a JSON object. */
+function parseToolArguments(toolCall: { name?: string; arguments?: string }): Record<string, unknown> {
+  try {
+    const parsed: unknown = JSON.parse(toolCall.arguments || '{}');
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    // Reported below with the tool name.
+  }
+  throw new Error(`Provider returned malformed arguments for tool call ${toolCall.name || 'unknown'}.`);
+}
+
 /**
  * Handle completion request
  */
@@ -703,35 +716,54 @@ async function handleCompletion(
     // (e.g. a cross-origin ad iframe) in the same tab cannot observe them.
     const sendOptions = sender.frameId != null ? { frameId: sender.frameId } : undefined;
 
-    for await (const chunk of session.adapter.stream(request)) {
-      if (chunk.type === 'text' && chunk.content) {
-        accumulated += chunk.content;
+    try {
+      for await (const chunk of session.adapter.stream(request)) {
+        if (chunk.type === 'text' && chunk.content) {
+          accumulated += chunk.content;
 
-        if (tabId != null) {
-          extensionBrowser.tabs.sendMessage(tabId, {
-            type: 'stream_chunk',
-            sessionId: payload.sessionId,
-            chunk: {
-              type: 'text',
-              text: chunk.content,
-              accumulated,
-            },
-          }, sendOptions);
+          if (tabId != null) {
+            extensionBrowser.tabs.sendMessage(tabId, {
+              type: 'stream_chunk',
+              sessionId: payload.sessionId,
+              chunk: {
+                type: 'text',
+                text: chunk.content,
+                accumulated,
+              },
+            }, sendOptions);
+          }
+        } else if (chunk.type === 'usage' && chunk.usage) {
+          usage = {
+            inputTokens: chunk.usage.inputTokens ?? 0,
+            outputTokens: chunk.usage.outputTokens ?? 0,
+            totalTokens: chunk.usage.totalTokens ?? 0,
+          };
+        } else if (chunk.type === 'tool_call' && chunk.toolCall?.complete) {
+          toolCalls.push({
+            id: chunk.toolCall.id,
+            name: chunk.toolCall.name,
+            arguments: parseToolArguments(chunk.toolCall),
+          });
         }
-      } else if (chunk.type === 'usage' && chunk.usage) {
-        usage = {
-          inputTokens: chunk.usage.inputTokens ?? 0,
-          outputTokens: chunk.usage.outputTokens ?? 0,
-          totalTokens: chunk.usage.totalTokens ?? 0,
-        };
-      } else if (chunk.type === 'tool_call' && chunk.toolCall?.complete) {
-        toolCalls.push({
-          id: chunk.toolCall.id,
-          name: chunk.toolCall.name,
-          arguments: JSON.parse(chunk.toolCall.arguments || '{}') as Record<string, unknown>,
-        });
+        // 'done' chunk from adapter is ignored - we send our own below
       }
-      // 'done' chunk from adapter is ignored - we send our own below
+    } catch (error) {
+      // Tell the waiting stream consumer; the thrown error also becomes the
+      // request's { error } response.
+      if (tabId != null) {
+        extensionBrowser.tabs.sendMessage(tabId, {
+          type: 'stream_chunk',
+          sessionId: payload.sessionId,
+          chunk: {
+            type: 'error',
+            error: {
+              code: 'stream_error',
+              message: error instanceof Error ? error.message : String(error),
+            },
+          },
+        }, sendOptions);
+      }
+      throw error;
     }
 
     // Send done with usage

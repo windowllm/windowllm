@@ -153,3 +153,60 @@ describe('protected messages are gated by the sender origin', () => {
     expect(res).toEqual({ hasPermission: true });
   });
 });
+
+describe('streaming completions', () => {
+  it('sends an error chunk to the requesting frame when the provider stream fails', async () => {
+    const origin = 'https://real-site.com';
+    store['windowllm:providers'] = JSON.stringify([{
+      id: 'local',
+      type: 'ollama',
+      name: 'Local',
+      enabled: true,
+      baseUrl: 'http://127.0.0.1:11434',
+      createdAt: 1,
+      updatedAt: 1,
+    }]);
+    store[PERMISSIONS_KEY] = JSON.stringify([{ origin, capabilities: [], grantedAt: 1 }]);
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.endsWith('/api/tags')) {
+        return new Response(JSON.stringify({ models: [{ name: 'stub', model: 'stub', size: 1, details: {} }] }));
+      }
+      return new Response('provider exploded', { status: 500, statusText: 'Internal Server Error' });
+    }));
+    // Reload adapters from the providers written above.
+    const changed = (globalThis as any).chrome.storage.onChanged.addListener.mock.calls[0][0];
+    changed({ 'windowllm:providers': { newValue: store['windowllm:providers'] } }, 'local');
+    const sendMessage = (globalThis as any).chrome.tabs.sendMessage as ReturnType<typeof vi.fn>;
+    sendMessage.mockClear();
+
+    try {
+      const init = await send(
+        { type: 'session_init', payload: { sessionId: 'stream-fail' } },
+        pageSender(origin),
+      );
+      expect(init.model?.id).toBe('ollama/stub');
+
+      const response = await send(
+        {
+          type: 'completion',
+          payload: { sessionId: 'stream-fail', messages: [{ role: 'user', content: 'hi' }], stream: true },
+        },
+        pageSender(origin),
+      );
+
+      expect(response.error).toBeTruthy();
+      const errorChunks = sendMessage.mock.calls.filter(([, message]) => message.chunk?.type === 'error');
+      expect(errorChunks).toHaveLength(1);
+      expect(errorChunks[0]![0]).toBe(7);
+      expect(errorChunks[0]![1]).toMatchObject({
+        type: 'stream_chunk',
+        sessionId: 'stream-fail',
+        chunk: { type: 'error', error: { code: 'stream_error', message: response.error } },
+      });
+      expect(errorChunks[0]![2]).toEqual({ frameId: 0 });
+      expect(sendMessage.mock.calls.some(([, message]) => message.chunk?.type === 'done')).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});

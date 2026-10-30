@@ -156,8 +156,15 @@ window.addEventListener('windowllm:popup_result', ((event: CustomEvent) => {
  * Send a message to the content script and wait for response
  * Handles vault unlock and consent flows if required
  */
-async function sendToContentScript(type: string, payload: unknown): Promise<unknown> {
-  const result = await sendToContentScriptRaw(type, payload);
+/** Default request timeout. Streaming completions pass null and report failure through chunks. */
+const REQUEST_TIMEOUT_MS = 30000;
+
+async function sendToContentScript(
+  type: string,
+  payload: unknown,
+  timeoutMs: number | null = REQUEST_TIMEOUT_MS,
+): Promise<unknown> {
+  const result = await sendToContentScriptRaw(type, payload, timeoutMs);
 
   // Check if vault is locked
   if (result && typeof result === 'object' && 'vaultLocked' in result) {
@@ -168,7 +175,7 @@ async function sendToContentScript(type: string, payload: unknown): Promise<unkn
     }
 
     // Retry the request after vault unlocked
-    return sendToContentScriptRaw(type, payload);
+    return sendToContentScriptRaw(type, payload, timeoutMs);
   }
 
   // Check if consent is required
@@ -181,7 +188,7 @@ async function sendToContentScript(type: string, payload: unknown): Promise<unkn
     }
 
     // Retry the request after consent granted
-    return sendToContentScriptRaw(type, payload);
+    return sendToContentScriptRaw(type, payload, timeoutMs);
   }
 
   return result;
@@ -190,7 +197,11 @@ async function sendToContentScript(type: string, payload: unknown): Promise<unkn
 /**
  * Raw send without consent handling
  */
-function sendToContentScriptRaw(type: string, payload: unknown): Promise<unknown> {
+function sendToContentScriptRaw(
+  type: string,
+  payload: unknown,
+  timeoutMs: number | null = REQUEST_TIMEOUT_MS,
+): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const id = ++messageId;
     pendingRequests.set(id, { resolve, reject });
@@ -199,13 +210,14 @@ function sendToContentScriptRaw(type: string, payload: unknown): Promise<unknown
       detail: JSON.stringify({ id, type, payload })
     }));
 
-    // Timeout after 30 seconds
-    setTimeout(() => {
-      if (pendingRequests.has(id)) {
-        pendingRequests.delete(id);
-        reject(new Error('Request timeout'));
-      }
-    }, 30000);
+    if (timeoutMs !== null) {
+      setTimeout(() => {
+        if (pendingRequests.has(id)) {
+          pendingRequests.delete(id);
+          reject(new Error('Request timeout'));
+        }
+      }, timeoutMs);
+    }
   });
 }
 
@@ -371,6 +383,18 @@ class ExtensionSession {
 
     window.addEventListener('windowllm:stream', streamHandler);
 
+    // The completion request settles when the background stream ends. A
+    // failure before or during streaming must end iteration, not leave it
+    // waiting for a done chunk that will never arrive.
+    let failure: Error | null = null;
+    const fail = (error: unknown) => {
+      failure ??= error instanceof Error ? error : new Error(String(error));
+      if (resolveNext) {
+        resolveNext();
+        resolveNext = null;
+      }
+    };
+
     try {
       // Start the stream
       sendToContentScript('completion', {
@@ -378,20 +402,33 @@ class ExtensionSession {
         messages,
         stream: true,
         options: this.options,
-      });
+      }, null).then(result => {
+        const error = result && typeof result === 'object' ? (result as { error?: unknown }).error : undefined;
+        if (error) fail(new Error(String(error)));
+      }, fail);
 
       // Yield chunks as they arrive
       let accumulated = '';
       while (true) {
         if (chunks.length > 0) {
-          const chunk = chunks.shift() as { type: string; text?: string; accumulated?: string; result?: unknown };
-          if (chunk.type === 'text') {
+          const chunk = chunks.shift() as {
+            type: string;
+            text?: string;
+            accumulated?: string;
+            result?: unknown;
+            error?: { message?: string };
+          };
+          if (chunk.type === 'error') {
+            throw new Error(chunk.error?.message || 'Stream failed');
+          } else if (chunk.type === 'text') {
             accumulated = chunk.accumulated || (accumulated + (chunk.text || ''));
             yield { type: 'text', text: chunk.text, accumulated };
           } else if (chunk.type === 'done') {
             yield { type: 'done', result: chunk.result };
             break;
           }
+        } else if (failure) {
+          throw failure;
         } else {
           await new Promise<void>(resolve => { resolveNext = resolve; });
         }
