@@ -607,6 +607,17 @@ interface LLMSession {
     reference, and MUST NOT be writable through built-in page tools.
   </p>
 
+  <p>
+    Query selectors MUST be evaluated against an inert copy of the granted
+    subtree in which the scope element is the document element and sensitive
+    controls have no value, so that a selector cannot observe state outside the
+    scope or test a redacted value through attribute, <code>:has()</code>, or
+    state selectors. The copy MUST NOT execute scripts, upgrade custom elements,
+    or load resources. Interaction-state pseudo-classes such as
+    <code>:focus</code>, <code>:hover</code>, and <code>:target</code> therefore
+    do not match.
+  </p>
+
   <aside class="example" title="Read and update a bounded part of the page">
     <pre class="js">
 const session = await window.llm.requestSession({

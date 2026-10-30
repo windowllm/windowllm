@@ -8,7 +8,7 @@ import {
 } from './index.js';
 
 class FakeElement {
-  readonly ownerDocument: FakeDocument;
+  ownerDocument: FakeDocument;
   readonly tagName: string;
   id = '';
   className = '';
@@ -20,7 +20,7 @@ class FakeElement {
   clicked = false;
   dispatchedEvents: string[] = [];
   private readonly attributes = new Map<string, string>();
-  private readonly children = new Set<FakeElement>();
+  private readonly childList: FakeElement[] = [];
   private readonly matches = new Map<string, FakeElement[]>();
 
   constructor(document: FakeDocument, tagName: string) {
@@ -28,6 +28,7 @@ class FakeElement {
     this.tagName = tagName.toUpperCase();
   }
 
+  get children(): readonly FakeElement[] { return this.childList; }
   getAttribute(name: string): string | null { return this.attributes.get(name) ?? null; }
   getAttributeNames(): string[] { return [...this.attributes.keys()]; }
   hasAttribute(name: string): boolean { return this.attributes.has(name); }
@@ -37,15 +38,42 @@ class FakeElement {
   dispatchEvent(event: Event): boolean { this.dispatchedEvents.push(event.type); return true; }
   click(): void { this.clicked = true; }
   contains(element: FakeElement): boolean {
-    return element === this || [...this.children].some(child => child.contains(element));
+    return element === this || this.childList.some(child => child.contains(element));
   }
   add(selector: string, element: FakeElement): void {
-    this.children.add(element);
+    if (!this.childList.includes(element)) this.childList.push(element);
     this.matches.set(selector, [...(this.matches.get(selector) || []), element]);
   }
-  remove(element: FakeElement): void { this.children.delete(element); }
+  remove(element: FakeElement): void {
+    const index = this.childList.indexOf(element);
+    if (index >= 0) this.childList.splice(index, 1);
+  }
   querySelector(selector: string): FakeElement | null { return this.matches.get(selector)?.[0] || null; }
   querySelectorAll(selector: string): FakeElement[] { return [...(this.matches.get(selector) || [])]; }
+
+  /** Deep copy with attributes, live state, children, and selector matches. */
+  cloneInto(document: FakeDocument): FakeElement {
+    const clone = new FakeElement(document, this.tagName);
+    Object.assign(clone, {
+      id: this.id,
+      className: this.className,
+      textContent: this.textContent,
+      value: this.value,
+      checked: this.checked,
+      disabled: this.disabled,
+    });
+    for (const [name, value] of this.attributes) clone.setAttribute(name, value);
+    const copies = new Map<FakeElement, FakeElement>();
+    for (const child of this.childList) {
+      const copy = child.cloneInto(document);
+      copies.set(child, copy);
+      clone.childList.push(copy);
+    }
+    for (const [selector, elements] of this.matches) {
+      clone.matches.set(selector, elements.map(element => copies.get(element)!).filter(Boolean));
+    }
+    return clone;
+  }
 }
 
 class FakeDocument {
@@ -53,18 +81,33 @@ class FakeDocument {
     Event,
     getComputedStyle: () => ({ display: 'block', visibility: 'visible' }),
   };
-  private readonly matches = new Map<string, FakeElement[]>();
+  readonly implementation = {
+    createHTMLDocument: (): FakeDocument => new FakeDocument(),
+  };
+  documentElement: FakeElement | null = new FakeElement(this, 'html');
 
   add(selector: string, element: FakeElement): void {
-    this.matches.set(selector, [...(this.matches.get(selector) || []), element]);
+    this.documentElement!.add(selector, element);
+  }
+
+  importNode(element: FakeElement): FakeElement {
+    return element.cloneInto(this);
+  }
+
+  removeChild(element: FakeElement): void {
+    if (this.documentElement === element) this.documentElement = null;
+  }
+
+  appendChild(element: FakeElement): void {
+    this.documentElement = element;
   }
 
   querySelector(selector: string): FakeElement | null {
-    return this.matches.get(selector)?.[0] || null;
+    return this.documentElement?.querySelector(selector) ?? null;
   }
 
   querySelectorAll(selector: string): FakeElement[] {
-    return [...(this.matches.get(selector) || [])];
+    return this.documentElement?.querySelectorAll(selector) ?? [];
   }
 }
 
@@ -391,6 +434,66 @@ describe('PageToolExecutor', () => {
     expect(write.error).toContain('outside the granted page scope');
     expect(inside.textContent).toBe('');
     expect(outside.textContent).toBe('');
+  });
+
+  it('evaluates selectors against an inert copy without sensitive values', async () => {
+    const setup = executor('read');
+    const inertDocuments: FakeDocument[] = [];
+    setup.document.implementation.createHTMLDocument = () => {
+      const inert = new FakeDocument();
+      inertDocuments.push(inert);
+      return inert;
+    };
+    const password = new FakeElement(setup.document, 'input');
+    password.setAttribute('type', 'password');
+    password.setAttribute('value', 'hunter2');
+    password.value = 'hunter2';
+    const search = new FakeElement(setup.document, 'input');
+    search.setAttribute('value', 'shoes');
+    search.value = 'shoes';
+    setup.document.add('#password', password);
+    setup.document.add('#search', search);
+
+    const result = await setup.executor.execute(call(PAGE_TOOL_NAMES.querySelector, { selector: '#password' }));
+    const [passwordCopy, searchCopy] = inertDocuments[0]!.documentElement!.children;
+
+    expect((result.content as { match: { ref: string } }).match.ref).toMatch(/^element_/);
+    expect(passwordCopy!.getAttribute('value')).toBeNull();
+    expect(passwordCopy!.value).toBe('');
+    expect(searchCopy!.getAttribute('value')).toBe('shoes');
+    expect(password.getAttribute('value')).toBe('hunter2');
+    expect(password.value).toBe('hunter2');
+  });
+
+  it('keeps previously classified controls valueless in later inert copies', async () => {
+    const setup = executor('read');
+    const inertDocuments: FakeDocument[] = [];
+    setup.document.implementation.createHTMLDocument = () => {
+      const inert = new FakeDocument();
+      inertDocuments.push(inert);
+      return inert;
+    };
+    const password = new FakeElement(setup.document, 'input');
+    password.setAttribute('type', 'password');
+    password.setAttribute('value', 'hunter2');
+    setup.document.add('#password', password);
+
+    await setup.executor.execute(call(PAGE_TOOL_NAMES.querySelector, { selector: '#password' }));
+    password.setAttribute('type', 'text');
+    await setup.executor.execute(call(PAGE_TOOL_NAMES.querySelector, { selector: '#password' }));
+
+    expect(inertDocuments[1]!.documentElement!.children[0]!.getAttribute('value')).toBeNull();
+  });
+
+  it('returns no matches for a document without a root element', async () => {
+    const setup = executor('read');
+    setup.document.documentElement = null;
+
+    const one = await setup.executor.execute(call(PAGE_TOOL_NAMES.querySelector, { selector: 'p' }));
+    const all = await setup.executor.execute(call(PAGE_TOOL_NAMES.querySelectorAll, { selector: 'p' }));
+
+    expect(one.content).toEqual({ selector: 'p', match: null });
+    expect(all.content).toEqual({ selector: 'p', matches: [], truncated: false });
   });
 
   it('rejects missing scopes, detached elements, cross-document elements, and unknown refs', async () => {

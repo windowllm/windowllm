@@ -455,13 +455,56 @@ export class PageToolExecutor {
     return root;
   }
 
+  private isSensitive(element: Element): boolean {
+    const ref = this.refs.get(element);
+    return (ref !== undefined && this.elements.get(ref)?.sensitive === true) || isSensitiveControl(element);
+  }
+
+  /**
+   * Evaluate a model-supplied selector against an inert copy of the granted
+   * subtree. The copy has no ancestors or siblings outside the scope, so
+   * :has(), :root, and ancestor combinators cannot observe ungranted state, and
+   * sensitive controls carry no value for attribute or state selectors to test.
+   * The copy has no browsing context, so it runs no scripts, upgrades no custom
+   * elements, and loads no resources.
+   */
+  private queryInert(selector: string): Element[] {
+    const scoped = this.root();
+    const live = scoped === this.document ? this.document.documentElement : scoped as Element;
+    if (!live) return [];
+    const inert = this.document.implementation.createHTMLDocument('');
+    const copy = inert.importNode(live, true);
+    if (inert.documentElement) inert.removeChild(inert.documentElement);
+    inert.appendChild(copy);
+
+    const originals = new Map<Element, Element>();
+    const pending: Array<[Element, Element]> = [[live, copy]];
+    while (pending.length > 0) {
+      const [original, copied] = pending.pop()!;
+      originals.set(copied, original);
+      if (this.isSensitive(original)) {
+        copied.removeAttribute('value');
+        if ('value' in copied) (copied as Element & { value: string }).value = '';
+      }
+      for (let index = 0; index < original.children.length; index += 1) {
+        const copiedChild = copied.children[index];
+        if (copiedChild) pending.push([original.children[index]!, copiedChild]);
+      }
+    }
+
+    return Array.from(inert.querySelectorAll(selector))
+      .filter(element => scoped === this.document || element !== copy)
+      .map(element => originals.get(element))
+      .filter((element): element is Element => element !== undefined);
+  }
+
   private querySelector(selector: string): PageToolResult {
-    const element = this.root().querySelector(selector);
+    const element = this.queryInert(selector)[0];
     return { selector, match: element ? this.snapshot(element, 4000) : null };
   }
 
   private querySelectorAll(selector: string, limit: number): PageToolResult {
-    const all = Array.from(this.root().querySelectorAll(selector));
+    const all = this.queryInert(selector);
     return {
       selector,
       matches: all.slice(0, limit).map(element => this.snapshot(element, 1000)),
