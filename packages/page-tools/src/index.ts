@@ -329,6 +329,28 @@ function assertMutableAttribute(name: string): void {
   }
 }
 
+/**
+ * Elements whose text the browser interprets as code, markup, or styles.
+ * Writing to an empty inline script executes it, and style text can exfiltrate
+ * page data through url() requests.
+ */
+const TEXT_IMMUTABLE_TAGS = new Set([
+  'script',
+  'style',
+  'template',
+  'noscript',
+  'iframe',
+  'object',
+  'embed',
+]);
+
+function assertTextMutable(element: Element): void {
+  const tag = element.tagName.toLowerCase();
+  if (TEXT_IMMUTABLE_TAGS.has(tag)) {
+    throw new Error(`set_text_content cannot write to <${tag}> elements.`);
+  }
+}
+
 interface StoredElement {
   element: Element;
   sensitive: boolean;
@@ -400,6 +422,7 @@ export class PageToolExecutor {
       case PAGE_TOOL_NAMES.setTextContent: {
         this.assertWriteAccess();
         const { element } = this.resolve(stringArgument(call, 'ref', false, 100));
+        assertTextMutable(element);
         element.textContent = stringArgument(call, 'value', true);
         return { element: this.snapshot(element, 2000) };
       }

@@ -529,7 +529,9 @@ console.<span class="f">table</span>(result.pageToolExecutions);</pre>
         <code>querySelector()</code> and <code>querySelectorAll()</code> only.
         Read-write mode also exposes controlled click, value, text, and
         application-state attribute operations. Attributes are restricted to
-        <code>data-*</code>, <code>aria-*</code>, and <code>title</code>.
+        <code>data-*</code>, <code>aria-*</code>, and <code>title</code>, and
+        text cannot be written into <code>&lt;script&gt;</code>,
+        <code>&lt;style&gt;</code>, or embedded-content elements.
         Mutation calls use opaque references returned by an earlier query, so
         the model never manufactures a DOM object.
       </p>

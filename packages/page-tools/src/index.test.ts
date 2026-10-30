@@ -244,6 +244,26 @@ describe('PageToolExecutor', () => {
     expect(element.textContent).toBe('');
   });
 
+  it.each(['script', 'style', 'template', 'noscript', 'iframe', 'object', 'embed'])(
+    'refuses to write text into a <%s> element',
+    async tag => {
+      const setup = executor('read-write');
+      const element = new FakeElement(setup.document, tag);
+      setup.document.add('#target', element);
+      const query = await setup.executor.execute(call(PAGE_TOOL_NAMES.querySelector, { selector: '#target' }));
+      const ref = (query.content as { match: { ref: string } }).match.ref;
+
+      const write = await setup.executor.execute(call(PAGE_TOOL_NAMES.setTextContent, {
+        ref,
+        value: 'window.pwned = true',
+      }));
+
+      expect(write.success).toBe(false);
+      expect(write.error).toContain(`<${tag}>`);
+      expect(element.textContent).toBe('');
+    },
+  );
+
   it('rejects set_value for non-form elements and unknown tool names', async () => {
     const setup = executor('read-write');
     const element = new FakeElement(setup.document, 'div');

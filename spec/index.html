@@ -588,7 +588,7 @@ interface LLMSession {
       <tr><td><code>windowllm_page_query_selector_all</code></td><td>read</td><td>CSS-selector matches in document order</td></tr>
       <tr><td><code>windowllm_page_click</code></td><td>read-write</td><td>Call <code>click()</code> on a referenced element</td></tr>
       <tr><td><code>windowllm_page_set_value</code></td><td>read-write</td><td>Set a form value and dispatch input and change events</td></tr>
-      <tr><td><code>windowllm_page_set_text_content</code></td><td>read-write</td><td>Replace <code>textContent</code></td></tr>
+      <tr><td><code>windowllm_page_set_text_content</code></td><td>read-write</td><td>Replace <code>textContent</code> of an element other than <code>script</code>, <code>style</code>, <code>template</code>, <code>noscript</code>, <code>iframe</code>, <code>object</code>, or <code>embed</code></td></tr>
       <tr><td><code>windowllm_page_set_attribute</code></td><td>read-write</td><td>Set a <code>data-*</code>, <code>aria-*</code>, or <code>title</code> attribute</td></tr>
       <tr><td><code>windowllm_page_remove_attribute</code></td><td>read-write</td><td>Remove a <code>data-*</code>, <code>aria-*</code>, or <code>title</code> attribute</td></tr>
     </tbody>
@@ -599,7 +599,9 @@ interface LLMSession {
     Mutation tools accept only references produced by the same session. An
     implementation MUST reject missing, detached, cross-document, and
     out-of-scope references. Attribute mutation MUST be limited to
-    <code>data-*</code>, <code>aria-*</code>, and <code>title</code>. Passwords,
+    <code>data-*</code>, <code>aria-*</code>, and <code>title</code>. Text
+    mutation MUST NOT target elements whose text the user agent interprets as
+    script, style, or embedded content. Passwords,
     hidden inputs, one-time codes, and payment-control values MUST be redacted,
     MUST remain classified as sensitive for the lifetime of their element
     reference, and MUST NOT be writable through built-in page tools.
