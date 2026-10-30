@@ -602,9 +602,16 @@ interface LLMSession {
     <code>data-*</code>, <code>aria-*</code>, and <code>title</code>. Text
     mutation MUST NOT target elements whose text the user agent interprets as
     script, style, or embedded content. Passwords,
-    hidden inputs, one-time codes, and payment-control values MUST be redacted,
+    hidden inputs, one-time codes, and payment-control values, including those
+    of <code>select</code> and <code>textarea</code> controls and the selected
+    option of such a <code>select</code>, MUST be redacted,
     MUST remain classified as sensitive for the lifetime of their element
     reference, and MUST NOT be writable through built-in page tools.
+    Serialized text MUST omit <code>script</code>, <code>style</code>,
+    <code>template</code>, and <code>noscript</code> text and sensitive
+    <code>textarea</code> text anywhere in the subtree. The <code>nonce</code>
+    attribute and the <code>content</code> of <code>meta</code> elements named
+    for anti-forgery tokens or credentials MUST be redacted.
   </p>
 
   <p>

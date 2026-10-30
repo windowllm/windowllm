@@ -9,7 +9,9 @@ import {
 
 class FakeElement {
   ownerDocument: FakeDocument;
+  readonly nodeType = 1;
   readonly tagName: string;
+  parentElement: FakeElement | null = null;
   id = '';
   className = '';
   textContent = '';
@@ -21,6 +23,7 @@ class FakeElement {
   dispatchedEvents: string[] = [];
   private readonly attributes = new Map<string, string>();
   private readonly childList: FakeElement[] = [];
+  private readonly nodes: Array<FakeElement | { nodeType: 3; textContent: string }> = [];
   private readonly matches = new Map<string, FakeElement[]>();
 
   constructor(document: FakeDocument, tagName: string) {
@@ -29,6 +32,8 @@ class FakeElement {
   }
 
   get children(): readonly FakeElement[] { return this.childList; }
+  get childNodes(): readonly unknown[] { return this.nodes; }
+  appendText(text: string): void { this.nodes.push({ nodeType: 3, textContent: text }); }
   getAttribute(name: string): string | null { return this.attributes.get(name) ?? null; }
   getAttributeNames(): string[] { return [...this.attributes.keys()]; }
   hasAttribute(name: string): boolean { return this.attributes.has(name); }
@@ -41,19 +46,27 @@ class FakeElement {
     return element === this || this.childList.some(child => child.contains(element));
   }
   add(selector: string, element: FakeElement): void {
-    if (!this.childList.includes(element)) this.childList.push(element);
+    if (!this.childList.includes(element) && !element.parentElement) {
+      this.childList.push(element);
+      this.nodes.push(element);
+      element.parentElement = this;
+    }
     this.matches.set(selector, [...(this.matches.get(selector) || []), element]);
   }
   remove(element: FakeElement): void {
     const index = this.childList.indexOf(element);
     if (index >= 0) this.childList.splice(index, 1);
+    const nodeIndex = this.nodes.indexOf(element);
+    if (nodeIndex >= 0) this.nodes.splice(nodeIndex, 1);
+    element.parentElement = null;
   }
   querySelector(selector: string): FakeElement | null { return this.matches.get(selector)?.[0] || null; }
   querySelectorAll(selector: string): FakeElement[] { return [...(this.matches.get(selector) || [])]; }
 
-  /** Deep copy with attributes, live state, children, and selector matches. */
-  cloneInto(document: FakeDocument): FakeElement {
+  /** Deep copy with attributes, live state, children, and descendant selector matches. */
+  cloneInto(document: FakeDocument, copies = new Map<FakeElement, FakeElement>()): FakeElement {
     const clone = new FakeElement(document, this.tagName);
+    copies.set(this, clone);
     Object.assign(clone, {
       id: this.id,
       className: this.className,
@@ -63,11 +76,10 @@ class FakeElement {
       disabled: this.disabled,
     });
     for (const [name, value] of this.attributes) clone.setAttribute(name, value);
-    const copies = new Map<FakeElement, FakeElement>();
     for (const child of this.childList) {
-      const copy = child.cloneInto(document);
-      copies.set(child, copy);
+      const copy = child.cloneInto(document, copies);
       clone.childList.push(copy);
+      copy.parentElement = clone;
     }
     for (const [selector, elements] of this.matches) {
       clone.matches.set(selector, elements.map(element => copies.get(element)!).filter(Boolean));
@@ -366,6 +378,131 @@ describe('PageToolExecutor', () => {
     expect(match.attributes.value).toBeUndefined();
     expect(write.success).toBe(false);
     expect(input.value).toBe('private');
+  });
+
+  it.each(['select', 'textarea'])('redacts and prevents writes to a sensitive %s', async tag => {
+    const setup = executor('read-write');
+    const control = new FakeElement(setup.document, tag);
+    control.value = '04';
+    control.textContent = 'private initial text';
+    control.setAttribute('autocomplete', 'cc-exp-month');
+    setup.document.add('#control', control);
+
+    const query = await setup.executor.execute(call(PAGE_TOOL_NAMES.querySelector, { selector: '#control' }));
+    const match = (query.content as { match: { ref: string; value: string; textContent: string } }).match;
+    const write = await setup.executor.execute(call(PAGE_TOOL_NAMES.setValue, { ref: match.ref, value: '12' }));
+
+    expect(match.value).toBe('[redacted]');
+    expect(match.textContent).toBe('');
+    expect(write.success).toBe(false);
+    expect(control.value).toBe('04');
+  });
+
+  it('redacts options of a sensitive select in snapshots and inert copies', async () => {
+    const setup = executor('read');
+    const inertDocuments: FakeDocument[] = [];
+    setup.document.implementation.createHTMLDocument = () => {
+      const inert = new FakeDocument();
+      inertDocuments.push(inert);
+      return inert;
+    };
+    const select = new FakeElement(setup.document, 'select');
+    select.setAttribute('autocomplete', 'cc-exp-month');
+    const option = new FakeElement(setup.document, 'option');
+    option.setAttribute('value', '04');
+    option.setAttribute('selected', '');
+    option.textContent = 'April';
+    select.add('option', option);
+    setup.document.add('#month', select);
+    setup.document.add('option', option);
+    const plainOption = new FakeElement(setup.document, 'option');
+    plainOption.setAttribute('value', 'en');
+    setup.document.add('#language', plainOption);
+
+    const result = await setup.executor.execute(call(PAGE_TOOL_NAMES.querySelector, { selector: 'option' }));
+    const plain = await setup.executor.execute(call(PAGE_TOOL_NAMES.querySelector, { selector: '#language' }));
+    const match = (result.content as { match: { textContent: string; attributes: Record<string, string> } }).match;
+    const optionCopy = inertDocuments[0]!.documentElement!.children[0]!.children[0]!;
+
+    expect(match.textContent).toBe('');
+    expect(match.attributes).toEqual({});
+    expect(optionCopy.getAttribute('value') ?? '').toBe('');
+    expect(optionCopy.getAttribute('selected')).toBeNull();
+    expect((plain.content as { match: { attributes: Record<string, string> } }).match.attributes).toEqual({ value: 'en' });
+  });
+
+  it('omits script, style, template, noscript, and sensitive text from snapshots', async () => {
+    const setup = executor('read');
+    const script = new FakeElement(setup.document, 'script');
+    script.textContent = 'window.__STATE__ = { token: "abc" }';
+    const parent = new FakeElement(setup.document, 'article');
+    parent.textContent = 'Hello secret world';
+    parent.appendText('Hello ');
+    const inlineScript = new FakeElement(setup.document, 'script');
+    inlineScript.appendText('secret');
+    const emphasis = new FakeElement(setup.document, 'em');
+    emphasis.appendText('kind ');
+    const textarea = new FakeElement(setup.document, 'textarea');
+    textarea.setAttribute('autocomplete', 'one-time-code');
+    textarea.appendText('123456');
+    parent.add('script, style, template, noscript, textarea', inlineScript);
+    parent.add('em', emphasis);
+    parent.add('textarea', textarea);
+    parent.appendText('world');
+    setup.document.add('#state', script);
+    setup.document.add('#article', parent);
+
+    const scriptResult = await setup.executor.execute(call(PAGE_TOOL_NAMES.querySelector, { selector: '#state' }));
+    const parentResult = await setup.executor.execute(call(PAGE_TOOL_NAMES.querySelector, { selector: '#article' }));
+
+    expect((scriptResult.content as { match: { textContent: string } }).match.textContent).toBe('');
+    expect((parentResult.content as { match: { textContent: string } }).match.textContent).toBe('Hello kind world');
+  });
+
+  it('bounds the text scan of large subtrees with hidden descendants', async () => {
+    const setup = executor('read');
+    const parent = new FakeElement(setup.document, 'div');
+    parent.add('script, style, template, noscript, textarea', new FakeElement(setup.document, 'script'));
+    for (let index = 0; index < 3; index += 1) parent.appendText('x'.repeat(60_000));
+    setup.document.add('#big', parent);
+
+    const result = await setup.executor.execute(call(PAGE_TOOL_NAMES.querySelector, { selector: '#big' }));
+
+    expect((result.content as { match: { textContent: string } }).match.textContent.length).toBeLessThanOrEqual(4_001);
+  });
+
+  it('redacts secret meta content and nonces from snapshots and inert copies', async () => {
+    const setup = executor('read');
+    const inertDocuments: FakeDocument[] = [];
+    setup.document.implementation.createHTMLDocument = () => {
+      const inert = new FakeDocument();
+      inertDocuments.push(inert);
+      return inert;
+    };
+    const csrf = new FakeElement(setup.document, 'meta');
+    csrf.setAttribute('name', 'csrf-token');
+    csrf.setAttribute('content', 'tok123');
+    const description = new FakeElement(setup.document, 'meta');
+    description.setAttribute('property', 'og:description');
+    description.setAttribute('content', 'A page');
+    const style = new FakeElement(setup.document, 'style');
+    style.setAttribute('nonce', 'n0nce');
+    setup.document.add('#csrf', csrf);
+    setup.document.add('#description', description);
+    setup.document.add('#style', style);
+
+    const attributesOf = async (selector: string): Promise<Record<string, string>> => {
+      const result = await setup.executor.execute(call(PAGE_TOOL_NAMES.querySelector, { selector }));
+      return (result.content as { match: { attributes: Record<string, string> } }).match.attributes;
+    };
+
+    expect(await attributesOf('#csrf')).toEqual({ name: 'csrf-token' });
+    expect(await attributesOf('#description')).toEqual({ property: 'og:description', content: 'A page' });
+    expect(await attributesOf('#style')).toEqual({});
+    const [csrfCopy, descriptionCopy, styleCopy] = inertDocuments[0]!.documentElement!.children;
+    expect(csrfCopy!.getAttribute('content')).toBeNull();
+    expect(descriptionCopy!.getAttribute('content')).toBe('A page');
+    expect(styleCopy!.getAttribute('nonce')).toBeNull();
   });
 
   it('does not allow a sensitive control to be declassified through attributes', async () => {

@@ -282,9 +282,12 @@ function compactText(value: string, limit: number): string {
 
 function isSensitiveControl(element: Element): boolean {
   const tag = element.tagName.toLowerCase();
-  if (tag !== 'input') return false;
-  const type = (element.getAttribute('type') || 'text').toLowerCase();
-  if (type === 'password' || type === 'hidden') return true;
+  if (tag === 'input') {
+    const type = (element.getAttribute('type') || 'text').toLowerCase();
+    if (type === 'password' || type === 'hidden') return true;
+  } else if (tag !== 'select' && tag !== 'textarea') {
+    return false;
+  }
   const autocomplete = (element.getAttribute('autocomplete') || '').toLowerCase();
   return autocomplete.split(/\s+/).some(token =>
     token === 'one-time-code'
@@ -294,14 +297,59 @@ function isSensitiveControl(element: Element): boolean {
   );
 }
 
+const SECRET_META_NAME = /csrf|xsrf|token|nonce|secret|session|api[-_]?key/i;
+
+/** Meta elements that conventionally carry anti-forgery tokens or credentials. */
+function isSecretMeta(element: Element): boolean {
+  if (element.tagName.toLowerCase() !== 'meta') return false;
+  return ['name', 'property', 'http-equiv', 'itemprop'].some(name =>
+    SECRET_META_NAME.test(element.getAttribute(name) || ''));
+}
+
+/** Attributes that are neither returned nor testable by selectors. */
+function redactedAttributeNames(element: Element, sensitive: boolean): string[] {
+  const names = ['nonce'];
+  if (sensitive) names.push('value', 'selected');
+  if (isSecretMeta(element)) names.push('content');
+  return names;
+}
+
 function safeAttributes(element: Element, sensitive: boolean): Record<string, string> {
   const result: Record<string, string> = {};
+  const redacted = redactedAttributeNames(element, sensitive);
   for (const name of element.getAttributeNames().slice(0, 40)) {
     const lower = name.toLowerCase();
-    if (lower.startsWith('on') || (sensitive && lower === 'value')) continue;
+    if (lower.startsWith('on') || redacted.includes(lower)) continue;
     result[name] = compactText(element.getAttribute(name) || '', 500);
   }
   return result;
+}
+
+/** Elements whose text is code, inert markup, or a form value rather than page prose. */
+const TEXT_HIDDEN_TAGS = new Set(['script', 'style', 'template', 'noscript']);
+const TEXT_HIDDEN_SELECTOR = 'script, style, template, noscript, textarea';
+const MAX_TEXT_SCAN = 100_000;
+
+/**
+ * textContent without script, style, template, and noscript text, or the
+ * initial text of sensitive textareas, anywhere in the subtree.
+ */
+function readableText(element: Element, isSensitive: (element: Element) => boolean): string {
+  if (TEXT_HIDDEN_TAGS.has(element.tagName.toLowerCase()) || isSensitive(element)) return '';
+  if (!element.querySelector(TEXT_HIDDEN_SELECTOR)) return element.textContent || '';
+  let text = '';
+  const pending: Node[] = [...Array.from(element.childNodes)].reverse();
+  while (pending.length > 0 && text.length < MAX_TEXT_SCAN) {
+    const node = pending.pop()!;
+    if (node.nodeType === 3) {
+      text += node.textContent || '';
+    } else if (node.nodeType === 1) {
+      const child = node as Element;
+      if (TEXT_HIDDEN_TAGS.has(child.tagName.toLowerCase()) || isSensitive(child)) continue;
+      pending.push(...Array.from(child.childNodes).reverse());
+    }
+  }
+  return text;
 }
 
 function isVisible(element: Element): boolean {
@@ -455,9 +503,18 @@ export class PageToolExecutor {
     return root;
   }
 
+  /** Sensitive controls, including sticky classifications and options of a sensitive select. */
   private isSensitive(element: Element): boolean {
     const ref = this.refs.get(element);
-    return (ref !== undefined && this.elements.get(ref)?.sensitive === true) || isSensitiveControl(element);
+    if ((ref !== undefined && this.elements.get(ref)?.sensitive === true) || isSensitiveControl(element)) {
+      return true;
+    }
+    const tag = element.tagName.toLowerCase();
+    if (tag !== 'option' && tag !== 'optgroup') return false;
+    for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+      if (parent.tagName.toLowerCase() === 'select') return this.isSensitive(parent);
+    }
+    return false;
   }
 
   /**
@@ -482,10 +539,9 @@ export class PageToolExecutor {
     while (pending.length > 0) {
       const [original, copied] = pending.pop()!;
       originals.set(copied, original);
-      if (this.isSensitive(original)) {
-        copied.removeAttribute('value');
-        if ('value' in copied) (copied as Element & { value: string }).value = '';
-      }
+      const sensitive = this.isSensitive(original);
+      for (const name of redactedAttributeNames(original, sensitive)) copied.removeAttribute(name);
+      if (sensitive && 'value' in copied) (copied as Element & { value: string }).value = '';
       for (let index = 0; index < original.children.length; index += 1) {
         const copiedChild = copied.children[index];
         if (copiedChild) pending.push([original.children[index]!, copiedChild]);
@@ -515,13 +571,13 @@ export class PageToolExecutor {
   private snapshot(element: Element, textLimit: number): PageElementSnapshot {
     const ref = this.store(element);
     const stored = this.elements.get(ref)!;
-    stored.sensitive ||= isSensitiveControl(element);
+    stored.sensitive ||= this.isSensitive(element);
     const tag = element.tagName.toLowerCase();
     const control = element as Element & { value?: unknown; checked?: unknown; disabled?: unknown };
     const snapshot: PageElementSnapshot = {
       ref,
       tagName: element.tagName,
-      textContent: compactText(element.textContent || '', textLimit),
+      textContent: compactText(readableText(element, node => this.isSensitive(node)), textLimit),
       attributes: safeAttributes(element, stored.sensitive),
       visible: isVisible(element),
     };
