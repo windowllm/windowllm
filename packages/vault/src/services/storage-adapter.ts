@@ -17,28 +17,35 @@ export interface StorageAdapter {
  * localStorage adapter for web/iframe mode
  */
 export class LocalStorageAdapter implements StorageAdapter {
+  /** Without a granted handle, read the live global so a later grant applies. */
+  constructor(private readonly granted?: Storage) {}
+
+  private get storage(): Storage {
+    return this.granted ?? localStorage;
+  }
+
   async get(key: string): Promise<string | null> {
-    return localStorage.getItem(key);
+    return this.storage.getItem(key);
   }
 
   async set(key: string, value: string): Promise<void> {
-    localStorage.setItem(key, value);
+    this.storage.setItem(key, value);
   }
 
   async remove(key: string): Promise<void> {
-    localStorage.removeItem(key);
+    this.storage.removeItem(key);
   }
 
   async clear(): Promise<void> {
     // Only clear windowllm keys
     const keysToRemove: string[] = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
+    for (let i = 0; i < this.storage.length; i++) {
+      const key = this.storage.key(i);
       if (key?.startsWith('windowllm:')) {
         keysToRemove.push(key);
       }
     }
-    keysToRemove.forEach(key => localStorage.removeItem(key));
+    keysToRemove.forEach(key => this.storage.removeItem(key));
   }
 }
 

@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Disposable WindowLLM storage-access vault</title>
+<h1>Disposable storage-access test vault</h1>
+<p>This fixture uses a local mock provider and test-only credentials. It does not use a real model account.</p>
+<button id="seed">Create disposable encrypted test vault</button><p id="status" role="status">Not initialized</p>
+<script type="module">
+import {getVaultEncryption,getVaultStorage} from '/src/services/storage.ts';
+document.getElementById('seed').onclick=async()=>{
+ try {
+  await getVaultEncryption().setup('windowllm-storage-access-test-only');
+  await getVaultStorage().saveProvider({id:'storage-access-test',type:'openai',name:'Storage-access fixture',enabled:true,apiKey:'windowllm-storage-access-test-key',baseUrl:`${location.protocol}//test.localhost:43141/v1`,defaultModel:'gpt-storage-access-model',createdAt:Date.now(),updatedAt:Date.now()});
+  document.getElementById('status').textContent='Encrypted test vault ready';
+ }catch(error){document.getElementById('status').textContent=error.message;}
+};
+</script></html>

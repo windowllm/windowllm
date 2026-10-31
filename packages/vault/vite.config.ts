@@ -5,7 +5,7 @@ import fs from 'fs';
 
 // Check if we have local certificates for HTTPS
 const certsDir = resolve(__dirname, '../../.certs');
-const hasLocalCerts = fs.existsSync(resolve(certsDir, 'key.pem')) &&
+const hasLocalCerts = process.env.WINDOWLLM_STORAGE_TEST_HTTP !== '1' && fs.existsSync(resolve(certsDir, 'key.pem')) &&
                        fs.existsSync(resolve(certsDir, 'cert.pem'));
 
 // Path to the client library
@@ -17,8 +17,14 @@ function serveClientLibrary(): Plugin {
     name: 'serve-client-library',
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
+        if (process.env.WINDOWLLM_STORAGE_TESTS === '1' && req.url === '/__test/storage-access/vault.html') {
+          const html = fs.readFileSync(resolve(__dirname, '../../tests/storage-access/vault.html'), 'utf8');
+          res.setHeader('Content-Type', 'text/html');
+          void server.transformIndexHtml(req.url, html).then(result => res.end(result), next);
+          return;
+        }
         // Serve client library
-        if (req.url === '/llm.js') {
+        if (req.url?.split('?')[0] === '/llm.js') {
           const clientPath = resolve(clientDistDir, 'llm.iife.js');
           if (fs.existsSync(clientPath)) {
             res.setHeader('Content-Type', 'application/javascript');

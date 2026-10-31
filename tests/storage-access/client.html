@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Cross-site WindowLLM storage-access test</title>
+<h1>Cross-site WindowLLM iframe</h1>
+<p>The test provider is local. No real API key or paid model is used.</p>
+<button id="connect">Connect models</button><button id="complete">Complete through iframe</button><button id="check">Check connection surfaces</button>
+<p id="status" role="status">Loading client</p><pre id="models"></pre><pre id="answer"></pre><p id="surfaces"></p><pre id="events"></pre>
+<script>
+window.WINDOWLLM_VAULT_URL=`${location.protocol}//windowllm.localhost:43140/frame.html`;
+window.WINDOWLLM_ACTIVITY=true;
+const helpers=[],open=window.open;window.open=function(...args){const helper=open.apply(this,args);if(helper)helpers.push(helper);return helper;};
+window.addEventListener('windowllm:activity',event=>{document.getElementById('events').textContent+=event.detail.direction+' '+event.detail.type+'\n';});
+</script><script src="//windowllm.localhost:43140/llm.js"></script>
+<script>
+const status=document.getElementById('status');
+document.getElementById('connect').onclick=async()=>{
+ try{await window.llm.waitForReady();const models=await window.llm.models.list();document.getElementById('models').textContent=models.map(model=>model.id).join('\n');status.textContent='Models ready';}
+ catch(error){status.textContent=error.message;}
+};
+document.getElementById('complete').onclick=async()=>{
+ try{const session=await window.llm.requestSession({model:'openai/gpt-storage-access-model'});const result=await session.complete('Verify the hidden iframe connection');document.getElementById('answer').textContent=result.message.content;session.destroy();status.textContent='Completion received';}
+ catch(error){status.textContent=error.message;}
+};
+document.getElementById('check').onclick=()=>{
+ const iframe=document.querySelector('iframe');document.getElementById('surfaces').textContent=`Helper windows open: ${helpers.filter(helper=>!helper.closed).length}; vault iframe: ${iframe&&getComputedStyle(iframe).display==='none'?'hidden':'visible'}`;
+};
+</script></html>

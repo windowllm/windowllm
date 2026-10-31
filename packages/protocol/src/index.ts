@@ -104,6 +104,12 @@ export interface ModelsListRequest extends ClientMessage {
   payload: Record<string, never>;
 }
 
+/** User-mediated access to the vault's unpartitioned browser storage. */
+export interface StorageAccessRequest extends ClientMessage {
+  type: 'storage_access';
+  payload: Record<string, never>;
+}
+
 export interface EmbeddingRequest extends ClientMessage {
   type: 'embedding';
   payload: {
@@ -124,6 +130,7 @@ export type VaultRequest =
   | CancelRequest
   | PermissionQueryRequest
   | ModelsListRequest
+  | StorageAccessRequest
   | EmbeddingRequest
   | PingRequest;
 
@@ -242,6 +249,11 @@ export interface ErrorResponse extends VaultMessage {
   payload: ErrorPayload;
 }
 
+export interface StorageAccessResponse extends VaultMessage {
+  type: 'storage_access';
+  payload: { success: boolean; error?: ErrorPayload };
+}
+
 export type VaultResponse =
   | HandshakeResponse
   | CompletionResponse
@@ -254,7 +266,8 @@ export type VaultResponse =
   | ConsentRequiredResponse
   | ConsentResultResponse
   | PongResponse
-  | ErrorResponse;
+  | ErrorResponse
+  | StorageAccessResponse;
 
 // =============================================================================
 // Supporting Types

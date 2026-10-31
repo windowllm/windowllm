@@ -36,7 +36,8 @@ import {
   createMockAdapter,
 } from '@windowllm/adapters';
 
-import { getVaultStorage, type StoredProviderConfig, getVaultEncryption } from './storage.js';
+import { getVaultStorage, type StoredProviderConfig, getVaultEncryption, getStorageAdapter } from './storage.js';
+import { getFrameStorageAccess } from './frame-storage.js';
 
 /**
  * Capability names that can be granted
@@ -102,69 +103,9 @@ export class VaultHandler {
     window.addEventListener('message', this.handleMessage.bind(this));
   }
 
-  /**
-   * Check if we're running in an iframe
-   */
-  private isInIframe(): boolean {
-    try {
-      return window.self !== window.top;
-    } catch {
-      // Cross-origin restriction - we're definitely in an iframe
-      return true;
-    }
-  }
-
-  /**
-   * Check if we have storage access (Safari ITP uses partitioned storage)
-   *
-   * Safari's Storage Access API only grants cookie access, not localStorage/IndexedDB.
-   * See: https://webkit.org/blog/8124/introducing-storage-access-api/
-   * "WebKit's implementation of the API only covers cookies"
-   */
+  /** Activate browser-granted vault storage before reading configuration or keys. */
   private async hasStorageAccess(): Promise<boolean> {
-    // Safari may give iframe partitioned (empty) storage instead of blocking
-    // Check if we can see the actual vault data
-    //
-    // Note: We can't check hasLegacyKey because SimpleObfuscation auto-creates
-    // a key when it doesn't find one, so partitioned storage would have its own key.
-    // We must check for data that only the main vault creates.
-
-    const hasCryptoSalt = localStorage.getItem('windowllm:crypto_salt') !== null;
-    const hasProviders = localStorage.getItem('windowllm:providers') !== null;
-    const hasPermissions = localStorage.getItem('windowllm:permissions') !== null;
-    const hasSettings = localStorage.getItem('windowllm:settings') !== null;
-    const isIframe = this.isInIframe();
-
-    // If we can see any vault data that only the main vault creates, we have real access
-    if (hasCryptoSalt || hasProviders || hasPermissions || hasSettings) {
-      return true;
-    }
-
-    // No vault data visible - could be unconfigured vault OR Safari partitioned storage
-    // To distinguish, try a write/read test with a unique key
-    if (isIframe) {
-      try {
-        const testKey = 'windowllm:storage_test';
-        const testValue = crypto.randomUUID();
-        localStorage.setItem(testKey, testValue);
-        const readBack = localStorage.getItem(testKey);
-        localStorage.removeItem(testKey);
-
-        // If we can write and read back the same value, localStorage is functional
-        // This is an unconfigured vault, not Safari partitioned storage
-        if (readBack === testValue) {
-          return true;
-        }
-      } catch {
-        // Storage access blocked entirely - this is Safari ITP
-        return false;
-      }
-      // Write/read mismatch - Safari partitioned storage
-      return false;
-    }
-
-    // Not in iframe, no vault data - first-time user
-    return true;
+    return getFrameStorageAccess().ensure();
   }
 
   /**
@@ -226,9 +167,9 @@ export class VaultHandler {
       payload: {
         success: false,
         error: {
-          code: 'SAFARI_EXTENSION_REQUIRED',
-          message: 'Safari requires the WindowLLM browser extension. Safari partitions storage for iframes and its Storage Access API only grants cookie access, not localStorage.',
-          retryable: false,
+          code: 'STORAGE_ACCESS_REQUIRED',
+          message: 'Connect the embedded WindowLLM frame to your existing vault.',
+          retryable: true,
         },
       },
     };
@@ -337,7 +278,7 @@ export class VaultHandler {
   refreshAdapters(): void {
     this.adapters.clear();
     try {
-      localStorage.removeItem(VaultHandler.MODELS_CACHE_KEY);
+      void getStorageAdapter().remove(VaultHandler.MODELS_CACHE_KEY).catch(() => {});
     } catch {
       // Ignore storage errors
     }
@@ -382,6 +323,23 @@ export class VaultHandler {
 
     const request = data as VaultRequest;
     const requestId = request.id; // Extract before switch for use in default/catch
+
+    if (request.type === 'storage_access') {
+      if (source !== window.parent || origin === 'null') {
+        this.sendError(requestId, 'PERMISSION_DENIED', 'Only the embedding site may request vault storage access.', source, origin);
+        return;
+      }
+      try {
+        await getFrameStorageAccess().request();
+        source.postMessage(createVaultResponse('storage_access', requestId, { success: true }), origin);
+      } catch (error) {
+        source.postMessage(createVaultResponse('storage_access', requestId, {
+          success: false,
+          error: { code: 'STORAGE_ACCESS_DENIED', message: error instanceof Error ? error.message : 'Vault storage access failed.', retryable: false },
+        }), origin);
+      }
+      return;
+    }
 
     // Check if vault is locked (only applies to operations that need API keys)
     const requiresUnlock = ['handshake', 'completion', 'models_list', 'embedding'].includes(request.type);
@@ -792,7 +750,7 @@ export class VaultHandler {
     // Check localStorage cache first
     const now = Date.now();
     try {
-      const cached = localStorage.getItem(VaultHandler.MODELS_CACHE_KEY);
+      const cached = await getStorageAdapter().get(VaultHandler.MODELS_CACHE_KEY);
       if (cached) {
         const { models, timestamp } = JSON.parse(cached);
         if ((now - timestamp) < VaultHandler.MODELS_CACHE_TTL) {
@@ -824,7 +782,7 @@ export class VaultHandler {
 
     // Update localStorage cache
     try {
-      localStorage.setItem(VaultHandler.MODELS_CACHE_KEY, JSON.stringify({
+      await getStorageAdapter().set(VaultHandler.MODELS_CACHE_KEY, JSON.stringify({
         models: allModels,
         timestamp: now,
       }));

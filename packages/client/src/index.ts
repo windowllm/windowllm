@@ -64,7 +64,7 @@ const VAULT_URL = (globalThis as { WINDOWLLM_VAULT_URL?: string }).WINDOWLLM_VAU
 const VAULT_BASE_URL = VAULT_URL.replace(/\/frame(\.html)?$/, '');
 
 // Version of this client
-const CLIENT_VERSION = '1.0.0';
+const CLIENT_VERSION = '1.0.1';
 
 /**
  * Pending request tracking
@@ -90,6 +90,8 @@ class WindowLLMClient implements WindowLLM {
   private sessionToken: string | null = null;
   private grantedCapabilities: (keyof ModelCapabilities)[] = [];
   private _available = false;
+  private readyFailed = false;
+  private storageAccessPromise: Promise<void> | null = null;
   private unlockPopup: Window | null = null;
   private unlockPromise: Promise<boolean> | null = null;
   private unlockResolve: ((unlocked: boolean) => void) | null = null;
@@ -104,6 +106,7 @@ class WindowLLMClient implements WindowLLM {
       this.readyResolve = resolve;
       this.readyReject = reject;
     });
+    void this.readyPromise.catch(() => {});
 
     this.permissions = new ClientPermissions(this);
     this.capabilities = new ClientCapabilities(this);
@@ -115,6 +118,40 @@ class WindowLLMClient implements WindowLLM {
 
   get available(): boolean {
     return this._available;
+  }
+
+  private activity(direction: 'in' | 'out', message: { type: string; id?: string; requestId?: string; payload: unknown }): void {
+    if (!(globalThis as { WINDOWLLM_ACTIVITY?: boolean }).WINDOWLLM_ACTIVITY) return;
+    try {
+      const payload = JSON.parse(JSON.stringify(message.payload, (key, value) =>
+        /^(api_?key|token|sessionToken|sessionId|authorization|credential|password|passphrase|nonce)$/i.test(key) ? '[redacted]' : value));
+      window.dispatchEvent(new CustomEvent('windowllm:activity', {
+        detail: { direction, type: `vault.${message.type}`, request: direction === 'out' ? message.id : message.requestId, payload },
+      }));
+    } catch { /* Observability cannot change a model request. */ }
+  }
+
+  private async requestVaultStorageAccess(): Promise<void> {
+    if (this.storageAccessPromise) return this.storageAccessPromise;
+    this.storageAccessPromise = (async () => {
+      const frame = this.iframe!;
+      const style = frame.getAttribute('style');
+      const overlay = document.createElement('div');
+      overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-label', 'Connect WindowLLM vault');
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:999999';
+      // Moving an iframe to another parent reloads it. Reveal this same frame.
+      frame.style.cssText = 'display:block;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:min(480px,95vw);height:360px;border:0;border-radius:12px;background:#fffaf0;z-index:1000000';
+      document.body.append(overlay);
+      try {
+        const response = await this.sendRequest('storage_access', {}, undefined, 300000);
+        const payload = response.payload as { success?: boolean; error?: { message?: string } };
+        if (!payload.success) throw new Error(payload.error?.message || 'Vault storage access was denied.');
+      } finally {
+        if (style === null) frame.removeAttribute('style'); else frame.setAttribute('style', style);
+        overlay.remove();
+      }
+    })();
+    try { await this.storageAccessPromise; } finally { this.storageAccessPromise = null; }
   }
 
   /**
@@ -162,6 +199,7 @@ class WindowLLMClient implements WindowLLM {
    * Open consent popup and wait for result
    */
   private openConsentPopup(url: string): Promise<boolean> {
+    this.activity('out', { type: 'consent.open', payload: { origin: window.location.origin } });
     return new Promise((resolve) => {
       const features = this.getPopupFeatures(500, 600);
       const popup = window.open(url, 'windowllm-consent', features);
@@ -176,6 +214,7 @@ class WindowLLMClient implements WindowLLM {
       const handleMessage = (event: MessageEvent) => {
         if (event.origin !== new URL(VAULT_BASE_URL).origin) return;
         if (event.data?.type === 'consent_result') {
+          this.activity('in', { type: 'consent.result', payload: { granted: event.data.granted === true } });
           window.removeEventListener('message', handleMessage);
           popup.close();
           resolve(event.data.granted === true);
@@ -263,6 +302,7 @@ class WindowLLMClient implements WindowLLM {
         const handleMessage = (event: MessageEvent) => {
           if (event.origin !== new URL(VAULT_BASE_URL).origin) return;
           if (event.data?.type === 'consent_result') {
+            this.activity('in', { type: 'consent.result', payload: { granted: event.data.granted === true } });
             window.removeEventListener('message', handleMessage);
             popup.close();
             resolve(event.data.granted === true);
@@ -429,6 +469,7 @@ class WindowLLMClient implements WindowLLM {
     if (this.unlockPromise) {
       return this.unlockPromise;
     }
+    this.activity('out', { type: 'unlock.open', payload: { origin: window.location.origin } });
 
     this.unlockPromise = new Promise<boolean>((resolve) => {
       this.unlockResolve = resolve;
@@ -460,6 +501,7 @@ class WindowLLMClient implements WindowLLM {
    * Handle vault unlocked notification from popup
    */
   private handleVaultUnlocked(): void {
+    this.activity('in', { type: 'unlock.result', payload: { unlocked: true } });
     if (this.unlockResolve) {
       this.unlockResolve(true);
       this.unlockResolve = null;
@@ -556,28 +598,33 @@ class WindowLLMClient implements WindowLLM {
 
   private async init() {
     try {
-      // Create hidden iframe
-      this.iframe = document.createElement('iframe');
-      this.iframe.style.display = 'none';
-      this.iframe.src = VAULT_URL;
-      this.iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin');
-      this.iframe.setAttribute('allow', 'storage-access');
+      if (!this.iframe?.isConnected) {
+        // Create hidden iframe
+        this.iframe = document.createElement('iframe');
+        this.iframe.style.display = 'none';
+        const frameURL = new URL(VAULT_URL);
+        frameURL.searchParams.set('client', CLIENT_VERSION);
+        this.iframe.src = frameURL.href;
+        this.iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-storage-access-by-user-activation');
+        this.iframe.setAttribute('allow', 'storage-access');
+        this.iframe.title = 'WindowLLM vault';
 
-      // Listen for messages
-      window.addEventListener('message', this.handleMessage.bind(this));
+        // Listen for messages
+        window.addEventListener('message', this.handleMessage.bind(this));
 
-      // Wait for iframe to load
-      await new Promise<void>((resolve, reject) => {
-        if (!this.iframe) return reject(new Error('Iframe not created'));
+        // Wait for iframe to load
+        await new Promise<void>((resolve, reject) => {
+          if (!this.iframe) return reject(new Error('Iframe not created'));
 
-        this.iframe.onload = () => resolve();
-        this.iframe.onerror = () => reject(new Error('Failed to load vault iframe'));
+          this.iframe.onload = () => resolve();
+          this.iframe.onerror = () => reject(new Error('Failed to load vault iframe'));
 
-        document.body.appendChild(this.iframe);
+          document.body.appendChild(this.iframe);
 
-        // Timeout after 10 seconds
-        setTimeout(() => reject(new Error('Vault connection timeout')), 10000);
-      });
+          // Timeout after 10 seconds
+          setTimeout(() => reject(new Error('Vault connection timeout')), 10000);
+        });
+      }
 
       // Perform handshake
       const handshake = await this.performHandshake();
@@ -593,6 +640,7 @@ class WindowLLMClient implements WindowLLM {
     } catch (error) {
       console.warn('WindowLLM: Failed to connect to vault', error);
       this._available = false;
+      this.readyFailed = true;
       this.readyReject(error as Error);
     }
   }
@@ -610,9 +658,10 @@ class WindowLLMClient implements WindowLLM {
       return;
     }
 
-    if (!isVaultMessage(data)) return;
+    if (event.source !== this.iframe?.contentWindow || !isVaultMessage(data)) return;
 
     const response = data as VaultResponse;
+    this.activity('in', response);
     const pending = this.pendingRequests.get(response.requestId);
 
     if (!pending) return;
@@ -640,7 +689,8 @@ class WindowLLMClient implements WindowLLM {
   async sendRequest<T extends VaultResponse>(
     type: string,
     payload: Record<string, unknown>,
-    onChunk?: (chunk: StreamChunkResponse['payload']) => void
+    onChunk?: (chunk: StreamChunkResponse['payload']) => void,
+    timeoutMs = 30000,
   ): Promise<T> {
     if (!this.iframe?.contentWindow) {
       throw new Error('Vault not connected');
@@ -659,7 +709,7 @@ class WindowLLMClient implements WindowLLM {
             this.pendingRequests.delete(message.id);
             reject(new Error('Request timeout'));
           }
-        }, 30000);
+        }, timeoutMs);
       };
 
       // Wrap onChunk to reset timeout on each chunk
@@ -675,6 +725,7 @@ class WindowLLMClient implements WindowLLM {
       });
 
       this.iframe!.contentWindow!.postMessage(message, VAULT_URL);
+      this.activity('out', message);
       resetTimeout();
     });
 
@@ -683,6 +734,11 @@ class WindowLLMClient implements WindowLLM {
       unlockUrl?: string;
       error?: { code?: string; message?: string }
     };
+
+    if (responsePayload.error?.code === 'STORAGE_ACCESS_REQUIRED' && type !== 'storage_access') {
+      await this.requestVaultStorageAccess();
+      return this.sendRequest<T>(type, payload, onChunk, timeoutMs);
+    }
 
     if (responsePayload.error?.code === 'SAFARI_EXTENSION_REQUIRED') {
       // Safari's Storage Access API doesn't grant localStorage access
@@ -709,6 +765,12 @@ class WindowLLMClient implements WindowLLM {
   }
 
   async waitForReady(): Promise<void> {
+    if (this.readyFailed) {
+      this.readyFailed = false;
+      this.readyPromise = new Promise((resolve, reject) => { this.readyResolve = resolve; this.readyReject = reject; });
+      void this.readyPromise.catch(() => {});
+      void this.init();
+    }
     return this.readyPromise;
   }
 

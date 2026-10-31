@@ -383,6 +383,11 @@ export function getVaultStorage(): VaultStorage {
 }
 
 // For backwards compatibility
+/** Discard objects tied to a partitioned adapter after a frame obtains storage access. */
+export function resetVaultStorage(): void {
+  vaultStorageInstance = null;
+}
+
 export const vaultStorage = {
   get instance() {
     return getVaultStorage();

@@ -54,9 +54,16 @@ interface EncryptedData {
 /**
  * Open IndexedDB connection
  */
+let vaultIndexedDB: IDBFactory | undefined;
+
+/** Select the browser-granted unpartitioned factory before initializing a frame vault. */
+export function setVaultIndexedDB(factory: IDBFactory): void {
+  vaultIndexedDB = factory;
+}
+
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    const request = (vaultIndexedDB ?? indexedDB).open(DB_NAME, DB_VERSION);
 
     request.onerror = () => reject(request.error);
     request.onsuccess = () => resolve(request.result);
