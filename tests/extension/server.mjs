@@ -100,6 +100,11 @@ export async function startExtensionE2EServer({ port = 3199, resultFile } = {}) 
 
     if (request.method === 'POST' && url.pathname === '/api/chat') {
       const body = await requestBody(request);
+      const lastContent = Array.isArray(body.messages) ? body.messages.at(-1)?.content : undefined;
+      if (body.stream && lastContent === 'WindowLLM contract stream failure') {
+        json(response, 500, { error: 'E2E provider stream failure' });
+        return;
+      }
       if (body.stream) {
         metrics.streams += 1;
         response.writeHead(200, {

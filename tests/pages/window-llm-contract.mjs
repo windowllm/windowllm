@@ -6,6 +6,9 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+/** A prompt the E2E mock providers answer with a failed stream. */
+export const STREAM_FAILURE_PROMPT = 'WindowLLM contract stream failure';
+
 async function waitForWindowLLM(timeoutMs = 15_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -23,6 +26,7 @@ export async function runWindowLLMContract(options) {
     expectedProvider,
     expectedModelId,
     expectedCompletionText,
+    streamFailureModelId = expectedModelId,
     scope = 'shared-api',
   } = options;
   const results = [];
@@ -110,6 +114,28 @@ export async function runWindowLLMContract(options) {
       done?.result?.message?.content === text,
       `stream terminal result ${JSON.stringify(done?.result?.message?.content)} does not match ${JSON.stringify(text)}`,
     );
+  });
+
+  await test('a failed stream rejects iteration instead of hanging', async () => {
+    const failing = await llm.requestSession({ model: streamFailureModelId });
+    try {
+      const outcome = await Promise.race([
+        (async () => {
+          try {
+            for await (const chunk of failing.stream(STREAM_FAILURE_PROMPT)) {
+              if (chunk.type === 'done') return 'done';
+            }
+            return 'ended';
+          } catch (error) {
+            return `rejected: ${errorMessage(error)}`;
+          }
+        })(),
+        new Promise(resolve => setTimeout(() => resolve('hung'), 10_000)),
+      ]);
+      assert(String(outcome).startsWith('rejected: '), `failed stream did not reject: ${outcome}`);
+    } finally {
+      failing.destroy();
+    }
   });
 
   await test('session lifecycle methods remain usable after requests', async () => {

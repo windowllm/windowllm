@@ -44,11 +44,13 @@ test('iframe mode satisfies the shared window.llm contract', async ({ browser })
       expectedProvider: 'iframe',
       expectedModelId: 'mock/mock/test-model',
       expectedCompletionText: 'mock response',
+      // The in-vault mock adapter cannot fail; the page's OpenAI-compatible mock can.
+      streamFailureModelId: 'openai/gpt-4o-mini',
     });
   }) as ContractResult[];
 
   expect(results.filter(result => result.status === 'fail')).toEqual([]);
-  expect(results).toHaveLength(8);
+  expect(results).toHaveLength(9);
 
   const pageAgent = await page.evaluate(async () => {
     const llm = (window as any).llm;

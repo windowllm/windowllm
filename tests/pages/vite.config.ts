@@ -40,6 +40,11 @@ function pageAgentProvider() {
         const messages = Array.isArray(body.messages) ? body.messages as Array<Record<string, unknown>> : [];
         const last = messages.at(-1);
         const previous = messages.at(-2);
+        if (body.stream && last?.content === 'WindowLLM contract stream failure') {
+          response.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          response.end(JSON.stringify({ error: { message: 'E2E provider stream failure' } }));
+          return;
+        }
         let message: Record<string, unknown> = { role: 'assistant', content: 'The iframe page element was updated.' };
         let finishReason = 'stop';
 
