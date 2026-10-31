@@ -92,6 +92,11 @@ class WindowLLMClient implements WindowLLM {
   private _available = false;
   private readyFailed = false;
   private storageAccessPromise: Promise<void> | null = null;
+  /** While the automatic page-load connection runs, never show a storage prompt. */
+  private connecting = false;
+  /** The vault needs browser storage access before the handshake can finish. */
+  private storageAccessNeeded = false;
+  private connectPromise: Promise<void> | null = null;
   private unlockPopup: Window | null = null;
   private unlockPromise: Promise<boolean> | null = null;
   private unlockResolve: ((unlocked: boolean) => void) | null = null;
@@ -627,22 +632,56 @@ class WindowLLMClient implements WindowLLM {
       }
 
       // Perform handshake
-      const handshake = await this.performHandshake();
-
-      if (handshake.payload.success && handshake.payload.sessionToken) {
-        this.sessionToken = handshake.payload.sessionToken;
-        this.grantedCapabilities = handshake.payload.grantedCapabilities || [];
-        this._available = true;
+      let handshake: HandshakeResponse;
+      this.connecting = true;
+      try {
+        handshake = await this.performHandshake();
+      } catch (error) {
+        if ((error as { code?: string }).code !== 'STORAGE_ACCESS_REQUIRED') throw error;
+        // Wait for the site to ask for AI before prompting the user.
+        this.storageAccessNeeded = true;
+        this._available = false;
         this.readyResolve();
-      } else {
-        throw new Error(handshake.payload.error?.message || 'Handshake failed');
+        return;
+      } finally {
+        this.connecting = false;
       }
+
+      this.acceptHandshake(handshake);
+      this.readyResolve();
     } catch (error) {
       console.warn('WindowLLM: Failed to connect to vault', error);
       this._available = false;
       this.readyFailed = true;
       this.readyReject(error as Error);
     }
+  }
+
+  private acceptHandshake(handshake: HandshakeResponse): void {
+    if (!handshake.payload.success || !handshake.payload.sessionToken) {
+      throw new Error(handshake.payload.error?.message || 'Handshake failed');
+    }
+    this.sessionToken = handshake.payload.sessionToken;
+    this.grantedCapabilities = handshake.payload.grantedCapabilities || [];
+    this.storageAccessNeeded = false;
+    this._available = true;
+  }
+
+  /**
+   * Finish connecting when the site asks for AI. This is the only path that
+   * may show the vault storage-access prompt for a deferred connection.
+   */
+  async connect(): Promise<void> {
+    await this.waitForReady();
+    if (!this.storageAccessNeeded) return;
+    this.connectPromise ??= (async () => {
+      try {
+        this.acceptHandshake(await this.performHandshake());
+      } finally {
+        this.connectPromise = null;
+      }
+    })();
+    return this.connectPromise;
   }
 
   private handleMessage(event: MessageEvent) {
@@ -736,6 +775,9 @@ class WindowLLMClient implements WindowLLM {
     };
 
     if (responsePayload.error?.code === 'STORAGE_ACCESS_REQUIRED' && type !== 'storage_access') {
+      if (this.connecting) {
+        throw Object.assign(new Error(responsePayload.error.message || 'Vault storage access required'), { code: 'STORAGE_ACCESS_REQUIRED' });
+      }
       await this.requestVaultStorageAccess();
       return this.sendRequest<T>(type, payload, onChunk, timeoutMs);
     }
@@ -775,14 +817,14 @@ class WindowLLMClient implements WindowLLM {
   }
 
   async requestSession(options?: SessionOptions): Promise<LLMSession> {
-    await this.waitForReady();
+    await this.connect();
     const session = new ClientSession(this, options);
     await session.initialize();
     return session;
   }
 
   async requestEmbedding(options?: EmbeddingOptions): Promise<EmbeddingSession> {
-    await this.waitForReady();
+    await this.connect();
     return new ClientEmbeddingSession(this, options);
   }
 
@@ -1210,7 +1252,8 @@ class ClientPermissions implements LLMPermissions {
   }
 
   async request(descriptor: LLMPermissionDescriptor): Promise<LLMPermissionStatus> {
-    // For now, just query - actual permission request flow would open vault UI
+    // Asking for permission is a site request for AI: finish a deferred connection.
+    await this.client.connect();
     return this.query(descriptor);
   }
 
@@ -1282,6 +1325,7 @@ class ClientModelRegistry implements LLMModelRegistry {
   async list(): Promise<LLMModel[]> {
     if (this.cache) return this.cache;
 
+    await this.client.connect();
     const response = await this.client.sendRequest<ModelsListResponse>('models_list', {});
     this.cache = response.payload.models;
     return this.cache;

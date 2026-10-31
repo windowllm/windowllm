@@ -5,8 +5,11 @@ partition does not establish that the user's top-level vault is unconfigured.
 The frame now requests browser-granted access to both stores and keeps all
 credential operations inside the vault origin.
 
-The iframe sandbox includes `allow-storage-access-by-user-activation`. When
-storage access is needed, the client reveals that same iframe with a Connect
+The iframe sandbox includes `allow-storage-access-by-user-activation`. The
+automatic connection on page load never prompts: when storage access is needed,
+`waitForReady()` resolves with `available` false. The prompt appears only when
+the site asks for AI through `requestSession()`, `requestEmbedding()`,
+`permissions.request()` or the model registry. Then the client reveals that same iframe with a Connect
 vault button. The click inside the vault calls
 `document.requestStorageAccess({localStorage:true,indexedDB:true})`. Supported
 browsers return unpartitioned storage handles. The local storage adapter uses the
