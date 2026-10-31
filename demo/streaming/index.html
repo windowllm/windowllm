@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WindowLLM - Streaming Example</title>
+  <link rel="stylesheet" href="../demo.css">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%23F5A623' rx='15' width='100' height='100'/><text x='50%' y='50%' dominant-baseline='central' text-anchor='middle' font-size='60' font-family='system-ui,sans-serif' font-weight='800' fill='%23171717'>W</text></svg>">
+</head>
+<body>
+  <header class="wld-nav">
+    <a class="wld-brand" href="/"><span class="wld-mark">W</span> WindowLLM</a>
+    <nav class="wld-nav-links">
+      <a href="/demo/">All demos</a>
+      <a href="/">Home</a>
+    </nav>
+  </header>
+  <div class="demo-head">
+    <span class="demo-kicker">Streaming · token by token</span>
+    <h1>Watch it think out loud</h1>
+    <p class="lead">Stream a response as it is generated, with a live cursor. Same session, <code>stream()</code> instead of <code>complete()</code>.</p>
+    <div class="demo-api"><span>session.stream()</span><span>for await</span></div>
+  </div>
+
+  <div class="status" id="status">Checking WindowLLM availability...</div>
+
+  <div class="model-selector">
+    <input type="text" class="model-search" id="model-search" placeholder="Search and select model..." disabled>
+    <div class="model-dropdown" id="model-dropdown"></div>
+  </div>
+
+  <div class="input-group">
+    <textarea id="prompt" placeholder="Ask for something longer, like 'Write a short story about a robot learning to paint'" disabled></textarea>
+    <button id="send" disabled>Stream</button>
+  </div>
+
+  <div id="output">Response will stream here...</div>
+
+  <script>
+    (function() {
+      const isLocal = location.hostname === 'localhost' || location.hostname.endsWith('.localhost');
+      const vaultUrl = isLocal ? 'https://windowllm.localhost:3000' : 'https://windowllm.org';
+
+      // Set the vault frame URL for the client library
+      window.WINDOWLLM_VAULT_URL = `${vaultUrl}/frame.html`;
+
+      const script = document.createElement('script');
+      script.src = `${vaultUrl}/llm.js`;
+      script.onload = main;
+      script.onerror = () => {
+        document.getElementById('status').innerHTML =
+          '<span class="error">Failed to load WindowLLM library</span>';
+      };
+      document.head.appendChild(script);
+    })();
+
+    async function main() {
+      const promptInput = document.getElementById('prompt');
+      const sendButton = document.getElementById('send');
+      const output = document.getElementById('output');
+      const status = document.getElementById('status');
+      const modelSearch = document.getElementById('model-search');
+      const modelDropdown = document.getElementById('model-dropdown');
+
+      let session = null;
+      let abortController = null;
+      let allModels = [];
+      let selectedModel = null;
+
+      function renderModelDropdown(filter = '') {
+        const lowerFilter = filter.toLowerCase();
+        const filtered = filter
+          ? allModels.filter(m => m.name.toLowerCase().includes(lowerFilter) || m.id.toLowerCase().includes(lowerFilter))
+          : allModels;
+
+        modelDropdown.innerHTML = filtered.slice(0, 50).map(m => `
+          <div class="model-option ${selectedModel?.id === m.id ? 'selected' : ''}" data-id="${m.id}">
+            ${m.name}
+            <small>${m.id}</small>
+          </div>
+        `).join('');
+
+        modelDropdown.querySelectorAll('.model-option').forEach(el => {
+          el.addEventListener('click', () => selectModel(el.dataset.id));
+        });
+      }
+
+      async function selectModel(modelId) {
+        const model = allModels.find(m => m.id === modelId);
+        if (!model) return;
+
+        selectedModel = model;
+        modelSearch.value = model.name;
+        modelDropdown.classList.remove('open');
+
+        try {
+          session = await window.llm.requestSession({
+            model: model.id,
+            capabilities: { required: ['streaming'] }
+          });
+          status.textContent = `Using ${session.model.name}`;
+          promptInput.disabled = false;
+          sendButton.disabled = false;
+        } catch (error) {
+          status.innerHTML = `<span class="error">Failed: ${error.message}</span>`;
+        }
+      }
+
+      async function init() {
+        if (!window.llm) {
+          status.innerHTML = '<span class="error">WindowLLM not available</span>';
+          return;
+        }
+
+        try {
+          await window.llm.waitForReady();
+        } catch (error) {
+          status.innerHTML = '<span class="error">WindowLLM not configured</span>';
+          return;
+        }
+
+        status.textContent = 'Loading models...';
+
+        try {
+          allModels = await window.llm.models.list();
+          // Filter to streaming-capable models
+          allModels = allModels.filter(m => m.capabilities?.streaming !== false);
+          modelSearch.disabled = false;
+          modelSearch.placeholder = `Search ${allModels.length} models...`;
+          renderModelDropdown();
+
+          if (allModels.length > 0) {
+            await selectModel(allModels[0].id);
+          }
+        } catch (error) {
+          status.innerHTML = `<span class="error">Failed to load models: ${error.message}</span>`;
+        }
+      }
+
+      async function streamMessage() {
+        const prompt = promptInput.value.trim();
+        if (!prompt || !session) return;
+
+        sendButton.textContent = 'Stop';
+        sendButton.onclick = stopStream;
+        output.innerHTML = '<span class="cursor"></span>';
+
+        abortController = new AbortController();
+
+        try {
+          let fullText = '';
+
+          for await (const chunk of session.stream(prompt)) {
+            if (abortController.signal.aborted) break;
+
+            switch (chunk.type) {
+              case 'text':
+                fullText = chunk.accumulated;
+                output.innerHTML = fullText + '<span class="cursor"></span>';
+                break;
+
+              case 'done':
+                output.textContent = fullText;
+                const usage = chunk.result.usage;
+                status.textContent = `${selectedModel?.name} - ${usage.inputTokens} in, ${usage.outputTokens} out`;
+                break;
+
+              case 'error':
+                output.innerHTML += `\n<span class="error">Error: ${chunk.error.message}</span>`;
+                break;
+            }
+          }
+        } catch (error) {
+          if (error.name !== 'AbortError') {
+            output.innerHTML += `\n<span class="error">Error: ${error.message}</span>`;
+          }
+        } finally {
+          sendButton.textContent = 'Stream';
+          sendButton.onclick = streamMessage;
+          sendButton.disabled = false;
+          abortController = null;
+        }
+      }
+
+      function stopStream() {
+        if (abortController) {
+          abortController.abort();
+          status.textContent = 'Stopped by user';
+        }
+      }
+
+      // Model selector events
+      modelSearch.addEventListener('focus', () => {
+        renderModelDropdown(modelSearch.value);
+        modelDropdown.classList.add('open');
+      });
+      modelSearch.addEventListener('input', (e) => {
+        renderModelDropdown(e.target.value);
+        modelDropdown.classList.add('open');
+      });
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('.model-selector')) {
+          modelDropdown.classList.remove('open');
+        }
+      });
+
+      sendButton.addEventListener('click', streamMessage);
+      init();
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WindowLLM - Chat Example</title>
+  <link rel="stylesheet" href="../demo.css">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%23F5A623' rx='15' width='100' height='100'/><text x='50%' y='50%' dominant-baseline='central' text-anchor='middle' font-size='60' font-family='system-ui,sans-serif' font-weight='800' fill='%23171717'>W</text></svg>">
+</head>
+<body>
+  <header class="wld-nav">
+    <a class="wld-brand" href="/"><span class="wld-mark">W</span> WindowLLM</a>
+    <nav class="wld-nav-links">
+      <a href="/demo/">All demos</a>
+      <a href="/">Home</a>
+    </nav>
+  </header>
+  <header>
+    <div class="demo-head">
+      <span class="demo-kicker">Chat · multi-turn memory</span>
+      <h1>A conversation that remembers</h1>
+      <p class="lead">A full chat session that keeps context across turns and streams every reply.</p>
+      <div class="demo-api"><span>requestSession()</span><span>session.stream()</span></div>
+    </div>
+    <div class="model-selector">
+      <input type="text" class="model-search" id="model-search" placeholder="Select a model..." disabled>
+      <div class="model-dropdown" id="model-dropdown"></div>
+    </div>
+    <div class="status" id="status">Loading...</div>
+  </header>
+
+  <div id="chat-container">
+    <div class="welcome">
+      <h2>Welcome to WindowLLM Chat</h2>
+      <p>Select a model above to start chatting</p>
+    </div>
+  </div>
+
+  <div id="input-area">
+    <textarea id="message-input" placeholder="Type a message..." rows="1" disabled></textarea>
+    <button id="send-btn" disabled title="Send message">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13"/>
+      </svg>
+    </button>
+  </div>
+
+  <script>
+    (function() {
+      const isLocal = location.hostname === 'localhost' || location.hostname.endsWith('.localhost');
+      const vaultUrl = isLocal ? 'https://windowllm.localhost:3000' : 'https://windowllm.org';
+
+      window.WINDOWLLM_VAULT_URL = `${vaultUrl}/frame.html`;
+
+      const script = document.createElement('script');
+      script.src = `${vaultUrl}/llm.js`;
+      script.onload = main;
+      script.onerror = () => {
+        document.getElementById('status').className = 'status error';
+        document.getElementById('status').textContent = 'Failed to load WindowLLM';
+      };
+      document.head.appendChild(script);
+    })();
+
+    async function main() {
+      const chatContainer = document.getElementById('chat-container');
+      const messageInput = document.getElementById('message-input');
+      const sendBtn = document.getElementById('send-btn');
+      const status = document.getElementById('status');
+      const modelSearch = document.getElementById('model-search');
+      const modelDropdown = document.getElementById('model-dropdown');
+
+      let session = null;
+      let isStreaming = false;
+      let allModels = [];
+      let selectedModel = null;
+
+      // Auto-resize textarea
+      messageInput.addEventListener('input', () => {
+        messageInput.style.height = 'auto';
+        messageInput.style.height = Math.min(messageInput.scrollHeight, 150) + 'px';
+      });
+
+      // Handle Enter key (Shift+Enter for newline)
+      messageInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          if (!sendBtn.disabled) {
+            sendMessage();
+          }
+        }
+      });
+
+      function renderModelDropdown(filter = '') {
+        const lowerFilter = filter.toLowerCase();
+        const filtered = filter
+          ? allModels.filter(m => m.name.toLowerCase().includes(lowerFilter) || m.id.toLowerCase().includes(lowerFilter))
+          : allModels;
+
+        modelDropdown.innerHTML = filtered.slice(0, 50).map(m => `
+          <div class="model-option ${selectedModel?.id === m.id ? 'selected' : ''}" data-id="${m.id}">
+            ${m.name}
+            <small>${m.id}</small>
+          </div>
+        `).join('');
+
+        modelDropdown.querySelectorAll('.model-option').forEach(el => {
+          el.addEventListener('click', () => selectModel(el.dataset.id));
+        });
+      }
+
+      async function selectModel(modelId) {
+        const model = allModels.find(m => m.id === modelId);
+        if (!model) return;
+
+        selectedModel = model;
+        modelSearch.value = model.name;
+        modelDropdown.classList.remove('open');
+        status.className = 'status';
+        status.textContent = 'Connecting...';
+
+        try {
+          session = await window.llm.requestSession({
+            model: model.id,
+            systemPrompt: 'You are a helpful, friendly assistant. Keep responses concise but informative.'
+          });
+
+          // Clear welcome message
+          const welcome = chatContainer.querySelector('.welcome');
+          if (welcome) welcome.remove();
+
+          status.textContent = `${session.model.name}`;
+          messageInput.disabled = false;
+          sendBtn.disabled = false;
+          messageInput.focus();
+        } catch (error) {
+          status.className = 'status error';
+          status.textContent = error.message;
+        }
+      }
+
+      function addMessage(role, content) {
+        const msg = document.createElement('div');
+        msg.className = `message ${role}`;
+        msg.textContent = content;
+        chatContainer.appendChild(msg);
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+        return msg;
+      }
+
+      function createStreamingMessage() {
+        const msg = document.createElement('div');
+        msg.className = 'message assistant streaming';
+        msg.innerHTML = '<span class="cursor"></span>';
+        chatContainer.appendChild(msg);
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+        return msg;
+      }
+
+      async function sendMessage() {
+        const text = messageInput.value.trim();
+        if (!text || !session || isStreaming) return;
+
+        // Add user message
+        addMessage('user', text);
+        messageInput.value = '';
+        messageInput.style.height = 'auto';
+
+        // Create streaming message
+        const assistantMsg = createStreamingMessage();
+        isStreaming = true;
+        sendBtn.disabled = true;
+        messageInput.disabled = true;
+
+        // Change button to stop
+        sendBtn.classList.add('stop');
+        sendBtn.innerHTML = `
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="6" y="6" width="12" height="12" rx="2"/>
+          </svg>
+        `;
+        sendBtn.disabled = false;
+        sendBtn.onclick = stopStreaming;
+
+        let fullText = '';
+
+        try {
+          for await (const chunk of session.stream(text)) {
+            if (!isStreaming) break;
+
+            if (chunk.type === 'text') {
+              fullText = chunk.accumulated;
+              assistantMsg.innerHTML = fullText + '<span class="cursor"></span>';
+              chatContainer.scrollTop = chatContainer.scrollHeight;
+            } else if (chunk.type === 'done') {
+              assistantMsg.classList.remove('streaming');
+              assistantMsg.textContent = fullText;
+              const usage = chunk.result?.usage;
+              if (usage) {
+                status.textContent = `${selectedModel?.name} (${usage.inputTokens}+${usage.outputTokens} tokens)`;
+              }
+            }
+          }
+        } catch (error) {
+          assistantMsg.classList.remove('streaming');
+          assistantMsg.innerHTML = fullText + `<span style="color:#ff6b6b"> [Error: ${error.message}]</span>`;
+        } finally {
+          // Remove cursor when done
+          assistantMsg.classList.remove('streaming');
+          const cursor = assistantMsg.querySelector('.cursor');
+          if (cursor) cursor.remove();
+          finishStreaming();
+        }
+      }
+
+      function stopStreaming() {
+        isStreaming = false;
+        status.textContent = selectedModel?.name + ' (stopped)';
+      }
+
+      function finishStreaming() {
+        isStreaming = false;
+        sendBtn.classList.remove('stop');
+        sendBtn.innerHTML = `
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13"/>
+          </svg>
+        `;
+        sendBtn.onclick = sendMessage;
+        sendBtn.disabled = false;
+        messageInput.disabled = false;
+        messageInput.focus();
+      }
+
+      // Model selector events
+      modelSearch.addEventListener('focus', () => {
+        renderModelDropdown(modelSearch.value);
+        modelDropdown.classList.add('open');
+      });
+      modelSearch.addEventListener('input', (e) => {
+        renderModelDropdown(e.target.value);
+        modelDropdown.classList.add('open');
+      });
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('.model-selector')) {
+          modelDropdown.classList.remove('open');
+        }
+      });
+
+      sendBtn.addEventListener('click', sendMessage);
+
+      // Initialize
+      async function init() {
+        if (!window.llm) {
+          status.className = 'status error';
+          status.textContent = 'WindowLLM not available';
+          return;
+        }
+
+        try {
+          await window.llm.waitForReady();
+        } catch (error) {
+          status.className = 'status error';
+          status.textContent = 'WindowLLM not configured';
+          return;
+        }
+
+        status.textContent = 'Loading models...';
+
+        try {
+          allModels = await window.llm.models.list();
+          allModels = allModels.filter(m => m.capabilities?.streaming !== false);
+          modelSearch.disabled = false;
+          modelSearch.placeholder = `Search ${allModels.length} models...`;
+          renderModelDropdown();
+
+          if (allModels.length > 0) {
+            await selectModel(allModels[0].id);
+          } else {
+            status.textContent = 'No models available';
+          }
+        } catch (error) {
+          status.className = 'status error';
+          status.textContent = error.message;
+        }
+      }
+
+      init();
+    }
+  </script>
+</body>
+</html>
